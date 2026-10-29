@@ -1,0 +1,181 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Validation Blueprint: UserProfile
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             data.heightCm is int && data.heightCm >= 80 && data.heightCm <= 250 &&
+             data.weightKg is int && data.weightKg >= 25 && data.weightKg <= 300 &&
+             data.targetWeightKg is int && data.targetWeightKg >= 25 && data.targetWeightKg <= 300 &&
+             data.weeklyWorkoutGoal is int && data.weeklyWorkoutGoal >= 1 && data.weeklyWorkoutGoal <= 14 &&
+             data.targetCaloriesPerWeek is int && data.targetCaloriesPerWeek >= 200 && data.targetCaloriesPerWeek <= 25000 &&
+             data.restingHeartRateBpm is int && data.restingHeartRateBpm >= 35 && data.restingHeartRateBpm <= 150 &&
+             data.vo2MaxEstimate is int && data.vo2MaxEstimate >= 15 && data.vo2MaxEstimate <= 95 &&
+             data.fitnessLevel is string && (data.fitnessLevel == 'Beginner' || data.fitnessLevel == 'Intermediate' || data.fitnessLevel == 'Advanced') &&
+             data.primaryFocus is string && (data.primaryFocus == 'Hypertrophy' || data.primaryFocus == 'Strength' || data.primaryFocus == 'Metabolic Conditioning' || data.primaryFocus == 'Mobility & Longevity') &&
+             data.equipmentCsv is string && data.equipmentCsv.size() >= 1 && data.equipmentCsv.size() <= 500 &&
+             data.lastFeedbackRpe is int && data.lastFeedbackRpe >= 1 && data.lastFeedbackRpe <= 10 &&
+             data.setupCompleted is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Validation Blueprint: WorkoutLog
+    function isValidWorkoutLog(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.exerciseId is string && data.exerciseId.size() >= 1 && data.exerciseId.size() <= 80 &&
+             data.exerciseName is string && data.exerciseName.size() >= 1 && data.exerciseName.size() <= 100 &&
+             data.muscleGroup is string && data.muscleGroup.size() >= 1 && data.muscleGroup.size() <= 60 &&
+             data.equipmentUsed is string && data.equipmentUsed.size() >= 1 && data.equipmentUsed.size() <= 80 &&
+             data.completedSets is int && data.completedSets >= 1 && data.completedSets <= 20 &&
+             data.totalReps is int && data.totalReps >= 1 && data.totalReps <= 500 &&
+             data.weightUsedKg is int && data.weightUsedKg >= 0 && data.weightUsedKg <= 500 &&
+             data.durationSeconds is int && data.durationSeconds >= 10 && data.durationSeconds <= 14400 &&
+             data.caloriesBurned is int && data.caloriesBurned >= 5 && data.caloriesBurned <= 3000 &&
+             data.rpeFeedback is int && data.rpeFeedback >= 1 && data.rpeFeedback <= 10 &&
+             data.dayKey is string && data.dayKey.size() >= 8 && data.dayKey.size() <= 20 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // Validation Blueprint: VitalLog
+    function isValidVitalLog(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.weightKg is int && data.weightKg >= 25 && data.weightKg <= 300 &&
+             data.bmiTenths is int && data.bmiTenths >= 100 && data.bmiTenths <= 600 &&
+             data.restingHeartRateBpm is int && data.restingHeartRateBpm >= 35 && data.restingHeartRateBpm <= 150 &&
+             data.recoveryScore is int && data.recoveryScore >= 1 && data.recoveryScore <= 100 &&
+             data.notes is string && data.notes.size() <= 300 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'heightCm', 'weightKg', 'targetWeightKg',
+                         'weeklyWorkoutGoal', 'targetCaloriesPerWeek', 'restingHeartRateBpm',
+                         'vo2MaxEstimate', 'fitnessLevel', 'primaryFocus', 'equipmentCsv',
+                         'lastFeedbackRpe', 'setupCompleted', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'heightCm', 'weightKg', 'targetWeightKg',
+                         'weeklyWorkoutGoal', 'targetCaloriesPerWeek', 'restingHeartRateBpm',
+                         'vo2MaxEstimate', 'fitnessLevel', 'primaryFocus', 'equipmentCsv',
+                         'lastFeedbackRpe', 'setupCompleted', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'heightCm', 'weightKg', 'targetWeightKg',
+                         'weeklyWorkoutGoal', 'targetCaloriesPerWeek', 'restingHeartRateBpm',
+                         'vo2MaxEstimate', 'fitnessLevel', 'primaryFocus', 'equipmentCsv',
+                         'lastFeedbackRpe', 'setupCompleted', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /workout_logs/{logId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(logId) && existing().userId == request.auth.uid;
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(logId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'exerciseId', 'exerciseName', 'muscleGroup', 'equipmentUsed',
+                           'completedSets', 'totalReps', 'weightUsedKg', 'durationSeconds',
+                           'caloriesBurned', 'rpeFeedback', 'dayKey', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'exerciseId', 'exerciseName', 'muscleGroup', 'equipmentUsed',
+                           'completedSets', 'totalReps', 'weightUsedKg', 'durationSeconds',
+                           'caloriesBurned', 'rpeFeedback', 'dayKey', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidWorkoutLog(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(logId) &&
+                         isValidWorkoutLog(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'completedSets', 'totalReps', 'weightUsedKg', 'durationSeconds',
+                           'caloriesBurned', 'rpeFeedback', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(logId) && existing().userId == request.auth.uid;
+      }
+
+      match /vital_logs/{vitalId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(vitalId) && existing().userId == request.auth.uid;
+        allow list: if isOwner(userId) && existing().userId == request.auth.uid;
+
+        allow create: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(vitalId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'weightKg', 'bmiTenths', 'restingHeartRateBpm',
+                           'recoveryScore', 'notes', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'weightKg', 'bmiTenths', 'restingHeartRateBpm',
+                           'recoveryScore', 'notes', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidVitalLog(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(userId) &&
+                         isValidId(vitalId) &&
+                         isValidVitalLog(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'weightKg', 'bmiTenths', 'restingHeartRateBpm',
+                           'recoveryScore', 'notes', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(vitalId) && existing().userId == request.auth.uid;
+      }
+    }
+  }
+}

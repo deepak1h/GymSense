@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">GymSense</string>
+    <string name="sign_in_with_google">Sign in with Google</string>
+    <string name="auth_subtitle">Smart Splits, Stickman Coaching, Consistency Calendar &amp; GymBae AI</string>
+    <string name="nav_today">Today</string>
+    <string name="nav_setup">Plan</string>
+    <string name="nav_goals">Streak</string>
+    <string name="nav_analytics">Stats</string>
+    <string name="nav_ai_lab">GymBae</string>
+</resources>

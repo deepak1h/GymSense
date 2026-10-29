@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Bold Dumbbell Silhouette centered in 66dp safe zone -->
+    <path
+        android:fillColor="#00E676"
+        android:pathData="M28,42 L34,42 L34,66 L28,66 Z M36,36 L43,36 L43,72 L36,72 Z M43,51 L65,51 L65,57 L43,57 Z M65,36 L72,36 L72,72 L65,72 Z M74,42 L80,42 L80,66 L74,66 Z" />
+    <!-- Biometric Pulse Accent -->
+    <path
+        android:fillColor="#00B0FF"
+        android:pathData="M45,54 L49,54 L52,44 L56,64 L59,54 L63,54 L63,51 L58,51 L56,57 L52,37 L48,51 L45,51 Z" />
+</vector>

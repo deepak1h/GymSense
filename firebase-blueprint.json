@@ -1,0 +1,249 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Stores user biometric vitals, available workout equipment, fitness level, goals, and adaptive RPE feedback.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated user UID owning this profile."
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User display name."
+        },
+        "heightCm": {
+          "type": "integer",
+          "description": "User height in centimeters (80 to 250)."
+        },
+        "weightKg": {
+          "type": "integer",
+          "description": "Current user weight in kilograms (25 to 300)."
+        },
+        "targetWeightKg": {
+          "type": "integer",
+          "description": "Goal weight in kilograms (25 to 300)."
+        },
+        "weeklyWorkoutGoal": {
+          "type": "integer",
+          "description": "Target number of workouts per week (1 to 14)."
+        },
+        "targetCaloriesPerWeek": {
+          "type": "integer",
+          "description": "Target active kcal burned per week (200 to 25000)."
+        },
+        "restingHeartRateBpm": {
+          "type": "integer",
+          "description": "Resting heart rate in BPM (35 to 150)."
+        },
+        "vo2MaxEstimate": {
+          "type": "integer",
+          "description": "Estimated VO2 max in mL/kg/min (15 to 95)."
+        },
+        "fitnessLevel": {
+          "type": "string",
+          "enum": ["Beginner", "Intermediate", "Advanced"],
+          "description": "Current athletic experience tier."
+        },
+        "primaryFocus": {
+          "type": "string",
+          "enum": ["Hypertrophy", "Strength", "Metabolic Conditioning", "Mobility & Longevity"],
+          "description": "Primary physiological adaptation goal."
+        },
+        "equipmentCsv": {
+          "type": "string",
+          "description": "Comma-separated list of available gym machines and equipment."
+        },
+        "lastFeedbackRpe": {
+          "type": "integer",
+          "description": "Most recent session Rate of Perceived Exertion (1 to 10) for dynamic routine adjustment."
+        },
+        "setupCompleted": {
+          "type": "boolean",
+          "description": "Whether initial equipment and biometric setup is complete."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when profile was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when profile was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "heightCm",
+        "weightKg",
+        "targetWeightKg",
+        "weeklyWorkoutGoal",
+        "targetCaloriesPerWeek",
+        "restingHeartRateBpm",
+        "vo2MaxEstimate",
+        "fitnessLevel",
+        "primaryFocus",
+        "equipmentCsv",
+        "lastFeedbackRpe",
+        "setupCompleted",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WorkoutLog": {
+      "title": "WorkoutLog",
+      "description": "Represents a completed exercise session with sets, reps, load, calories, and RPE performance feedback.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated user UID."
+        },
+        "exerciseId": {
+          "type": "string",
+          "description": "Identifier of the exercise performed."
+        },
+        "exerciseName": {
+          "type": "string",
+          "description": "Display name of the exercise."
+        },
+        "muscleGroup": {
+          "type": "string",
+          "description": "Primary muscle group targeted."
+        },
+        "equipmentUsed": {
+          "type": "string",
+          "description": "Machine or equipment used for the exercise."
+        },
+        "completedSets": {
+          "type": "integer",
+          "description": "Number of sets completed (1 to 20)."
+        },
+        "totalReps": {
+          "type": "integer",
+          "description": "Total repetitions completed across all sets (1 to 500)."
+        },
+        "weightUsedKg": {
+          "type": "integer",
+          "description": "Working weight in kilograms (0 to 500)."
+        },
+        "durationSeconds": {
+          "type": "integer",
+          "description": "Time spent in seconds (10 to 14400)."
+        },
+        "caloriesBurned": {
+          "type": "integer",
+          "description": "Estimated active calories burned (5 to 3000)."
+        },
+        "rpeFeedback": {
+          "type": "integer",
+          "description": "User performance feedback RPE (1 to 10)."
+        },
+        "dayKey": {
+          "type": "string",
+          "description": "ISO date key YYYY-MM-DD."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workout was logged (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workout log was updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "exerciseId",
+        "exerciseName",
+        "muscleGroup",
+        "equipmentUsed",
+        "completedSets",
+        "totalReps",
+        "weightUsedKg",
+        "durationSeconds",
+        "caloriesBurned",
+        "rpeFeedback",
+        "dayKey",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "VitalLog": {
+      "title": "VitalLog",
+      "description": "Historical biometric check-in tracking weight, BMI, resting heart rate, and recovery readiness.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Authenticated user UID."
+        },
+        "weightKg": {
+          "type": "integer",
+          "description": "Logged weight in kilograms (25 to 300)."
+        },
+        "bmiTenths": {
+          "type": "integer",
+          "description": "Calculated BMI multiplied by 10 (e.g., 225 for 22.5)."
+        },
+        "restingHeartRateBpm": {
+          "type": "integer",
+          "description": "Logged resting heart rate in BPM (35 to 150)."
+        },
+        "recoveryScore": {
+          "type": "integer",
+          "description": "Biometric recovery readiness score (1 to 100)."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Physiological or soreness notes."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when vital log was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when vital log was updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "weightKg",
+        "bmiTenths",
+        "restingHeartRateBpm",
+        "recoveryScore",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "User biometric profile, available equipment, goals, and adaptive routine state."
+    },
+    "/users/{userId}/workout_logs/{logId}": {
+      "schema": {
+        "$ref": "#/entities/WorkoutLog"
+      },
+      "description": "Per-user completed exercise sessions and real-time progress logs."
+    },
+    "/users/{userId}/vital_logs/{vitalId}": {
+      "schema": {
+        "$ref": "#/entities/VitalLog"
+      },
+      "description": "Per-user longitudinal weight, BMI, resting HR, and recovery telemetry logs."
+    }
+  }
+}

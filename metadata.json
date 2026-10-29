@@ -1,0 +1,6 @@
+{
+  "name": "GymSense",
+  "description": "Smart workout scheduler, custom routine builder, local & cloud rep tracker, consistency calendar (7-day to 100-day streaks), stickman animations, and GymBae AI coach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
