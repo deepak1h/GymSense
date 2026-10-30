@@ -7,6 +7,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -52,10 +53,10 @@ fun StickmanExerciseCanvas(
     // Normalized oscillation t in [0f..1f] where 0 = start/lockout, 1 = peak flexion/contraction
     val t = if (isPlaying) ((1f - cos(phase)) * 0.5f) else 0.65f
 
-    val primaryColor = if (isGirl) Color(0xFFFF4081) else Color(0xFF00E676)
-    val secondaryColor = if (isGirl) Color(0xFF00E5FF) else Color(0xFF00B0FF)
-    val boneColor = Color(0xFFF3F7FA)
-    val equipColor = Color(0xFFFFB300)
+    val primaryColor = if (isGirl) Color(0xFFFF4081) else MaterialTheme.colorScheme.primary
+    val secondaryColor = if (isGirl) Color(0xFF00B8D4) else MaterialTheme.colorScheme.secondary
+    val boneColor = MaterialTheme.colorScheme.onSurface
+    val equipColor = Color(0xFFFFA000)
 
     Canvas(modifier = modifier) {
         val w = size.width
@@ -68,14 +69,14 @@ fun StickmanExerciseCanvas(
             val cols = 6
             for (i in 1 until cols) {
                 drawLine(
-                    color = Color.White.copy(alpha = 0.05f),
+                    color = boneColor.copy(alpha = 0.08f),
                     start = Offset(w * i / cols, 0f),
                     end = Offset(w * i / cols, h),
                     strokeWidth = 1f
                 )
             }
             drawLine(
-                color = Color.White.copy(alpha = 0.14f),
+                color = boneColor.copy(alpha = 0.2f),
                 start = Offset(w * 0.1f, h * 0.86f),
                 end = Offset(w * 0.9f, h * 0.86f),
                 strokeWidth = 2f

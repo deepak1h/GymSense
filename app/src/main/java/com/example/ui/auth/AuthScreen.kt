@@ -354,8 +354,8 @@ fun AuthScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 FeaturePillarCard(
                     icon = Icons.Default.Save,
-                    title = "Local Database + Cloud Sync",
-                    subtitle = "Save all reps & exercises locally on device or sync with Google."
+                    title = "Instant Offline & Cloud Sync",
+                    subtitle = "Save all reps, vitals, and schedules automatically."
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 FeaturePillarCard(
@@ -434,7 +434,6 @@ fun AuthScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Option to Use Local Database Only Without Google Account & Skip Setup
                 OutlinedButton(
                     onClick = onContinueWithLocalDatabase,
                     modifier = Modifier
@@ -451,7 +450,7 @@ fun AuthScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Skip Sign-In • Use Local Database",
+                        text = "Skip • Continue Offline",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface

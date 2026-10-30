@@ -61,7 +61,7 @@ class WorkoutViewModel(
     } else {
         repository.observeUserProfile(currentUserId)
             .catch { e ->
-                Log.w(TAG, "Cloud profile unavailable, falling back to local DB", e)
+                Log.w(TAG, "Cloud profile unavailable", e)
                 emit(null)
             }
     }
@@ -70,7 +70,12 @@ class WorkoutViewModel(
         localProfileFlow,
         cloudProfileFlow
     ) { localProf, cloudProf ->
-        DataUiState.Success(cloudProf ?: localProf)
+        if (localProf == null && cloudProf != null) {
+            viewModelScope.launch {
+                localRepository.saveProfile(cloudProf)
+            }
+        }
+        DataUiState.Success(localProf ?: cloudProf)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000L),
@@ -81,10 +86,7 @@ class WorkoutViewModel(
         flowOf(emptyList())
     } else {
         repository.observeWorkoutLogs(currentUserId)
-            .catch { e ->
-                Log.w(TAG, "Cloud workout logs unavailable, using local DB", e)
-                emit(emptyList())
-            }
+            .catch { emit(emptyList()) }
     }
 
     val localRecordsState: StateFlow<List<LocalWorkoutRecordEntity>> = localRepository
@@ -195,6 +197,7 @@ class WorkoutViewModel(
         ExerciseCatalog.buildDynamicSchedule(
             profile = profile,
             todayLogs = todayLogs,
+            allHistoricalLogs = allLogs,
             customRoutineIds = customIds,
             todayExtraIds = extraIds
         )
@@ -226,7 +229,34 @@ class WorkoutViewModel(
                 setupCompleted = true
             )
             persistProfileBothOrLocal(base)
-            _statusBanner.value = "Setup skipped — using default GymSense schedule!"
+        }
+    }
+
+    fun toggleWaterSlot(slotIndex: Int) {
+        viewModelScope.launch {
+            val base = currentOrDefaultProfile()
+            val bit = 1 shl slotIndex.coerceIn(0, 6)
+            val newMask = base.waterSlotsMask xor bit
+            val updated = base.withUpdatedPreferences(waterSlotsMask = newMask).copy(setupCompleted = true)
+            persistProfileBothOrLocal(updated)
+        }
+    }
+
+    fun toggleProteinShakePreference(enabled: Boolean) {
+        viewModelScope.launch {
+            val base = currentOrDefaultProfile()
+            val updated = base.withUpdatedPreferences(wantsProteinShake = enabled).copy(setupCompleted = true)
+            persistProfileBothOrLocal(updated)
+            _statusBanner.value = if (enabled) "Protein shake reminder ON" else "Protein shake reminder OFF"
+        }
+    }
+
+    fun toggleWaterAlertsPreference(enabled: Boolean) {
+        viewModelScope.launch {
+            val base = currentOrDefaultProfile()
+            val updated = base.withUpdatedPreferences(waterAlertsEnabled = enabled).copy(setupCompleted = true)
+            persistProfileBothOrLocal(updated)
+            _statusBanner.value = if (enabled) "3-hour water alerts ON (6am–12am)" else "3-hour water alerts OFF"
         }
     }
 
@@ -237,11 +267,11 @@ class WorkoutViewModel(
             if (current.contains(exerciseId)) {
                 current.remove(exerciseId)
                 localRepository.saveTodayExtraExercises(currentUserId, todayDayKey(), current)
-                _statusBanner.value = "Removed $exName from today"
+                _statusBanner.value = "Removed $exName"
             } else {
                 current.add(exerciseId)
                 localRepository.saveTodayExtraExercises(currentUserId, todayDayKey(), current)
-                _statusBanner.value = "Added $exName to today's split!"
+                _statusBanner.value = "Added $exName"
             }
         }
     }
@@ -256,16 +286,29 @@ class WorkoutViewModel(
                 aiPinnedIds = exerciseIds
             ).copy(setupCompleted = true)
             persistProfileBothOrLocal(updated)
-            _statusBanner.value = "Saved My Plan (${exerciseIds.size} exercises)!"
+            _statusBanner.value = "Custom plan saved (${exerciseIds.size} exercises)"
         }
     }
 
     fun toggleGender(isGirl: Boolean) {
         viewModelScope.launch {
             val base = currentOrDefaultProfile()
-            val updated = base.withUpdatedPreferences(isGirl = isGirl).copy(setupCompleted = true)
+            val defaultFocus = if (isGirl) {
+                if (base.primaryFocus in ExerciseCatalog.girlGoalOptions) base.primaryFocus else "Glutes & Booty"
+            } else {
+                if (base.primaryFocus in ExerciseCatalog.boyGoalOptions) base.primaryFocus else "V-Taper & Muscle"
+            }
+            val targetSplitCode = if (isGirl) WorkoutSplitDay.GLUTE_TONE_SCULPT.code else "AUTO"
+            val updated = base
+                .copy(primaryFocus = defaultFocus, setupCompleted = true)
+                .withUpdatedPreferences(
+                    isGirl = isGirl,
+                    isWeek1To2Warmup = false,
+                    splitOverrideCode = targetSplitCode,
+                    aiPinnedIds = emptyList()
+                )
             persistProfileBothOrLocal(updated)
-            _statusBanner.value = "Switched to ${if (isGirl) "Girl" else "Boy"} profile"
+            _statusBanner.value = "${if (isGirl) "Girl Sculpt" else "Boy"} mode • $defaultFocus"
         }
     }
 
@@ -290,7 +333,6 @@ class WorkoutViewModel(
                 aiPinnedIds = if (split == WorkoutSplitDay.CUSTOM_MY_PLAN) customRoutineIds.value else emptyList()
             ).copy(setupCompleted = true)
             persistProfileBothOrLocal(updated)
-            _statusBanner.value = "Split: ${split.shortTitle}"
         }
     }
 
@@ -306,8 +348,7 @@ class WorkoutViewModel(
             ).copy(setupCompleted = true)
             persistProfileBothOrLocal(updated)
             val newSplit = ExerciseCatalog.resolveTodaySplit(updated)
-            val msg = "Shifted +$deltaDays day! Today's split is now ${newSplit.shortTitle} (${newSplit.subtitle})."
-            _statusBanner.value = msg
+            val msg = "Shifted +$deltaDays day → Today is now ${newSplit.shortTitle} (${newSplit.subtitle})."
             onPopupResult(msg)
         }
     }
@@ -322,12 +363,13 @@ class WorkoutViewModel(
                 aiPinnedIds = exerciseIds
             ).copy(setupCompleted = true)
             persistProfileBothOrLocal(updated)
-            _statusBanner.value = "GymBae Plan Ready: $splitSummary"
+            _statusBanner.value = "GymBae Plan: $splitSummary"
         }
     }
 
     fun saveSetupAndVitals(
         displayName: String,
+        ageYears: Int,
         heightCm: Long,
         weightKg: Long,
         targetWeightKg: Long,
@@ -338,8 +380,9 @@ class WorkoutViewModel(
         fitnessLevel: String,
         primaryFocus: String,
         selectedEquipment: List<String>,
-        isGirl: Boolean = currentOrDefaultProfile().isGirl,
-        isWeek1To2Warmup: Boolean = currentOrDefaultProfile().isWeek1To2Warmup,
+        isGirl: Boolean,
+        wantsProteinShake: Boolean,
+        isWeek1To2Warmup: Boolean,
         lastFeedbackRpe: Long = 7L,
         onComplete: () -> Unit = {}
     ) {
@@ -363,6 +406,8 @@ class WorkoutViewModel(
             val updatedProfile = base.withUpdatedPreferences(
                 equipment = selectedEquipment.ifEmpty { listOf("Bodyweight") },
                 isGirl = isGirl,
+                ageYears = ageYears,
+                wantsProteinShake = wantsProteinShake,
                 isWeek1To2Warmup = isWeek1To2Warmup
             )
 
@@ -373,13 +418,13 @@ class WorkoutViewModel(
                 bmiTenths = updatedProfile.bmiTenths,
                 restingHeartRateBpm = updatedProfile.restingHeartRateBpm,
                 recoveryScore = 88L,
-                notes = "Gear & Vitals Saved"
+                notes = "Setup & Vitals"
             )
             localRepository.saveVital(vital)
             if (!isLocalOnlyMode) {
                 repository.logVitalsCheckIn(vital)
             }
-            _statusBanner.value = "Saved! BMI ${updatedProfile.bmiValue}"
+            _statusBanner.value = "Schedule ready • BMI ${updatedProfile.bmiValue}"
             onComplete()
             _isSaving.value = false
         }
@@ -404,7 +449,6 @@ class WorkoutViewModel(
             val safeRpe = rpeFeedback.coerceIn(1, 10)
             val today = todayDayKey()
 
-            // 1. Always save locally in Room SQLite immediately
             localRepository.saveWorkoutRecord(
                 LocalWorkoutRecordEntity(
                     userId = currentUserId,
@@ -422,7 +466,6 @@ class WorkoutViewModel(
                 )
             )
 
-            // 2. Also sync to Firestore if signed in with Google
             if (!isLocalOnlyMode) {
                 val log = WorkoutLog(
                     userId = currentUserId,
@@ -449,11 +492,7 @@ class WorkoutViewModel(
                 )
             )
 
-            _statusBanner.value = if (isLocalOnlyMode) {
-                "Saved to Local DB: $safeSets sets • $safeReps reps!"
-            } else {
-                "Saved Locally & Cloud: $safeSets sets • $safeReps reps!"
-            }
+            _statusBanner.value = "Done: $safeSets× ($safeReps reps)"
             onFinished()
             _isSaving.value = false
         }
@@ -486,7 +525,7 @@ class WorkoutViewModel(
             if (!isLocalOnlyMode) {
                 repository.logVitalsCheckIn(vital)
             }
-            _statusBanner.value = "Vitals logged (BMI ${updatedProfile.bmiValue})"
+            _statusBanner.value = "BMI ${updatedProfile.bmiValue} updated"
             _isSaving.value = false
         }
     }

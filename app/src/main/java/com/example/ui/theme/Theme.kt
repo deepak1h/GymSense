@@ -4,6 +4,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -32,19 +33,45 @@ private val GymSenseDarkColorScheme = darkColorScheme(
     onError = Color.White
 )
 
+private val GymSenseLightColorScheme = lightColorScheme(
+    primary = LightEmeraldPrimary,
+    onPrimary = Color.White,
+    primaryContainer = LightEmeraldContainer,
+    onPrimaryContainer = LightOnEmeraldContainer,
+    secondary = LightCyanSecondary,
+    onSecondary = Color.White,
+    secondaryContainer = LightCyanContainer,
+    onSecondaryContainer = LightOnCyanContainer,
+    tertiary = LightAmberTertiary,
+    onTertiary = Color.White,
+    tertiaryContainer = LightAmberContainer,
+    onTertiaryContainer = LightOnAmberContainer,
+    background = LightAlabasterBackground,
+    onBackground = TextPrimaryDark,
+    surface = LightPureSurface,
+    onSurface = TextPrimaryDark,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = TextSecondaryDarkMuted,
+    outline = OutlineLightSubtle,
+    error = Color(0xFFB91C1C),
+    onError = Color.White
+)
+
 val GymSenseShapes = Shapes(
     small = RoundedCornerShape(10.dp),
     medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(32.dp)
+    large = RoundedCornerShape(22.dp),
+    extraLarge = RoundedCornerShape(28.dp)
 )
 
 @Composable
 fun MyApplicationTheme(
+    darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
+    val colorScheme = if (darkTheme) GymSenseDarkColorScheme else GymSenseLightColorScheme
     MaterialTheme(
-        colorScheme = GymSenseDarkColorScheme,
+        colorScheme = colorScheme,
         typography = Typography,
         shapes = GymSenseShapes,
         content = content

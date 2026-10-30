@@ -29,7 +29,7 @@ data class LocalUserProfileEntity(
     val primaryFocus: String = "Hypertrophy",
     val equipmentCsv: String = "Bodyweight,Dumbbells,Barbell,Cable Machine,Lat Pulldown,Leg Press Machine,Bench|G:Boy|W12:1|SP:AUTO|OFF:0",
     val lastFeedbackRpe: Long = 7L,
-    val setupCompleted: Boolean = true,
+    val setupCompleted: Boolean = false,
     val updatedAtMillis: Long = System.currentTimeMillis()
 ) {
     fun toUserProfile(): UserProfile = UserProfile(

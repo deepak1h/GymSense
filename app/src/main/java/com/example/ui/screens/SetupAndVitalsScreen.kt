@@ -23,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessibilityNew
+import androidx.compose.material.icons.filled.Cake
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DoneAll
@@ -32,11 +33,15 @@ import androidx.compose.material.icons.filled.Face3
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Height
+import androidx.compose.material.icons.filled.LocalDrink
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SelfImprovement
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,7 +67,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -75,7 +79,6 @@ import com.example.data.model.UserProfile
 import com.example.data.model.WorkoutSplitDay
 import com.example.ui.components.StickmanExerciseCanvas
 import com.example.ui.theme.JetBrainsMonoFamily
-import com.example.ui.theme.VoltLime
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -84,11 +87,15 @@ fun SetupAndVitalsScreen(
     currentProfile: UserProfile,
     customRoutineIds: List<String>,
     defaultDisplayName: String,
+    isFirstTimeSetup: Boolean = false,
+    isGoogleLinked: Boolean = false,
     isSaving: Boolean,
     onSaveCustomRoutine: (List<String>) -> Unit,
     onSkipSetup: () -> Unit = {},
+    onLinkGoogleAccount: () -> Unit = {},
     onSaveSetup: (
         displayName: String,
+        ageYears: Int,
         heightCm: Long,
         weightKg: Long,
         targetWeightKg: Long,
@@ -100,6 +107,7 @@ fun SetupAndVitalsScreen(
         primaryFocus: String,
         selectedEquipment: List<String>,
         isGirl: Boolean,
+        wantsProteinShake: Boolean,
         isWeek1To2Warmup: Boolean,
         lastFeedbackRpe: Long
     ) -> Unit,
@@ -109,6 +117,8 @@ fun SetupAndVitalsScreen(
         mutableStateOf(currentProfile.displayName.ifBlank { defaultDisplayName.ifBlank { "Athlete" } })
     }
     var isGirl by remember(currentProfile) { mutableStateOf(currentProfile.isGirl) }
+    var ageSlider by remember(currentProfile) { mutableFloatStateOf(currentProfile.ageYears.toFloat()) }
+    var wantsProteinShake by remember(currentProfile) { mutableStateOf(currentProfile.wantsProteinShake) }
     var isWeek1To2Warmup by remember(currentProfile) { mutableStateOf(currentProfile.isWeek1To2Warmup) }
 
     var heightSlider by remember(currentProfile) { mutableFloatStateOf(currentProfile.heightCm.toFloat()) }
@@ -119,7 +129,15 @@ fun SetupAndVitalsScreen(
     var rhrSlider by remember(currentProfile) { mutableFloatStateOf(currentProfile.restingHeartRateBpm.toFloat()) }
     var vo2Slider by remember(currentProfile) { mutableFloatStateOf(currentProfile.vo2MaxEstimate.toFloat()) }
     var fitnessLevel by remember(currentProfile) { mutableStateOf(currentProfile.fitnessLevel) }
-    var primaryFocus by remember(currentProfile) { mutableStateOf(currentProfile.primaryFocus) }
+
+    var primaryFocus by remember(currentProfile) {
+        val defaultGoal = if (currentProfile.isGirl) {
+            if (currentProfile.primaryFocus in ExerciseCatalog.girlGoalOptions) currentProfile.primaryFocus else "Glutes & Booty"
+        } else {
+            if (currentProfile.primaryFocus in ExerciseCatalog.boyGoalOptions) currentProfile.primaryFocus else "V-Taper & Muscle"
+        }
+        mutableStateOf(defaultGoal)
+    }
 
     val selectedEquip = remember(currentProfile) {
         mutableStateListOf<String>().apply {
@@ -131,13 +149,24 @@ fun SetupAndVitalsScreen(
         mutableStateListOf<String>().apply {
             val seed = customRoutineIds.ifEmpty {
                 currentProfile.aiPinnedExerciseIds.ifEmpty {
-                    listOf(
-                        "ex_warmup_jumping_jacks",
-                        "ex_goblet_squat",
-                        "ex_lat_pulldown",
-                        "ex_pushup_tempo",
-                        "ex_plank_hollow_hold"
-                    )
+                    if (currentProfile.isGirl) {
+                        listOf(
+                            "ex_warmup_jumping_jacks",
+                            "ex_glute_bridge_iso",
+                            "ex_cable_glute_kickback",
+                            "ex_sumo_dumbbell_squat",
+                            "ex_curtsy_lunge",
+                            "ex_pilates_hundred_core"
+                        )
+                    } else {
+                        listOf(
+                            "ex_warmup_jumping_jacks",
+                            "ex_goblet_squat",
+                            "ex_lat_pulldown",
+                            "ex_pushup_tempo",
+                            "ex_plank_hollow_hold"
+                        )
+                    }
                 }
             }
             addAll(seed)
@@ -148,11 +177,15 @@ fun SetupAndVitalsScreen(
     val liveHeightMeters = (heightSlider / 100f).coerceAtLeast(1.0f)
     val liveBmi = ((weightSlider / (liveHeightMeters * liveHeightMeters)) * 10f).roundToInt() / 10f
     val liveBmiCategory = when {
-        liveBmi < 18.5f -> "Under"
+        liveBmi < 18.5f -> "Lean"
         liveBmi < 25.0f -> "Optimal"
-        liveBmi < 30.0f -> "Elevated"
+        liveBmi < 30.0f -> "High"
         else -> "High"
     }
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    val cardBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
 
     LazyColumn(
         modifier = modifier
@@ -161,7 +194,7 @@ fun SetupAndVitalsScreen(
         contentPadding = PaddingValues(14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 0. TOP BAR WITH SKIP SETUP OPTION
+        // 0. Minimal Header + Skip Button
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -170,174 +203,130 @@ fun SetupAndVitalsScreen(
             ) {
                 Column {
                     Text(
-                        text = "Plan, Gear & Vitals",
-                        style = MaterialTheme.typography.titleLarge,
+                        text = if (isFirstTimeSetup) "Quick Setup" else "Plan & Gear",
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "Customize exercises or skip to use defaults",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = "Profile, goals & gym equipment",
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 AssistChip(
                     onClick = onSkipSetup,
-                    label = { Text("Skip Setup →", fontWeight = FontWeight.Bold) },
+                    label = { Text("Skip", fontWeight = FontWeight.Bold) },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.SkipNext,
+                            contentDescription = "Skip Setup",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    },
                     modifier = Modifier.testTag("skip_setup_button")
                 )
             }
         }
-        // 1. CUSTOM SCHEDULE & EXERCISE BUILDER ("Make My Own Schedule")
+
+        // 0B. Google Privacy & AI Link Card
         item {
             Card(
                 shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                modifier = Modifier.border(
-                    width = 1.dp,
-                    color = VoltLime.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(18.dp)
-                )
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isGoogleLinked) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                    } else {
+                        MaterialTheme.colorScheme.surface
+                    }
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = if (isGoogleLinked) primaryColor.copy(alpha = 0.5f) else cardBorderColor,
+                        shape = RoundedCornerShape(18.dp)
+                    )
             ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.EditCalendar,
-                                contentDescription = null,
-                                tint = VoltLime,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Column {
-                                Text(
-                                    text = "Build My Custom Schedule",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "${pickedCustomExercises.size} exercises selected",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = VoltLime
-                                )
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                if (pickedCustomExercises.isNotEmpty()) {
-                                    onSaveCustomRoutine(pickedCustomExercises.toList())
-                                }
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = VoltLime,
-                                contentColor = Color(0xFF06150E)
-                            ),
-                            modifier = Modifier.testTag("save_custom_schedule_button")
-                        ) {
-                            Text("Apply Plan", fontWeight = FontWeight.Bold)
-                        }
-                    }
-
-                    // Filter tabs for Custom Schedule Exercise Selector
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf("All", "Bodyweight", "Legs", "Back", "Push").forEach { cat ->
-                            FilterChip(
-                                selected = exerciseFilter == cat,
-                                onClick = { exerciseFilter = cat },
-                                label = { Text(cat) }
-                            )
-                        }
-                    }
-
-                    val visibleCatalog = ExerciseCatalog.allExercises.filter { ex ->
-                        when (exerciseFilter) {
-                            "Bodyweight" -> ex.requiredEquipment.equals("Bodyweight", ignoreCase = true)
-                            "Legs" -> WorkoutSplitDay.LEGS_GLUTES in ex.splitTags
-                            "Back" -> WorkoutSplitDay.BACK_BICEPS in ex.splitTags
-                            "Push" -> WorkoutSplitDay.PUSH_DAY in ex.splitTags
-                            else -> true
-                        }
-                    }
-
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        visibleCatalog.take(10).forEach { ex ->
-                            val isPicked = pickedCustomExercises.contains(ex.id)
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .clickable {
-                                        if (isPicked && pickedCustomExercises.size > 1) {
-                                            pickedCustomExercises.remove(ex.id)
-                                        } else if (!isPicked) {
-                                            pickedCustomExercises.add(ex.id)
-                                        }
-                                    },
-                                color = if (isPicked) {
-                                    VoltLime.copy(alpha = 0.14f)
+                        Icon(
+                            imageVector = if (isGoogleLinked) Icons.Default.CheckCircle else Icons.Default.Security,
+                            contentDescription = "Privacy & Google AI Link",
+                            tint = if (isGoogleLinked) primaryColor else secondaryColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Column {
+                            Text(
+                                text = if (isGoogleLinked) {
+                                    "Google Account Linked"
                                 } else {
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                                    "Link Google for Privacy & AI"
                                 },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = ex.name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${ex.requiredEquipment} • ${ex.muscleGroup} (${ex.baseSets}×${ex.baseRepsPerSet})",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = if (isPicked) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                                        contentDescription = null,
-                                        tint = if (isPicked) VoltLime else MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                            }
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = if (isGoogleLinked) {
+                                    "Private cloud sync & GymBae AI active"
+                                } else {
+                                    "Encrypted sync & private GymBae AI"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    if (isGoogleLinked) {
+                        Surface(
+                            color = primaryColor.copy(alpha = 0.18f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text(
+                                text = "Linked",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = primaryColor,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    } else {
+                        Button(
+                            onClick = onLinkGoogleAccount,
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("setup_link_google_button")
+                        ) {
+                            Text(
+                                text = "Link Google",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
         }
 
-        // 2. PERSONALIZATION CARD: GIRL / BOY + WEEK 1-2 WARMUP
+        // 1. Profile: Name, Sex (Boy/Girl), Goals & Stickman Preview
         item {
             Card(
                 shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.border(1.dp, cardBorderColor, RoundedCornerShape(18.dp))
             ) {
                 Column(
                     modifier = Modifier.padding(14.dp),
@@ -350,21 +339,22 @@ fun SetupAndVitalsScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(68.dp)
+                                .size(72.dp)
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0xFF080F18))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .border(
                                     1.dp,
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                                    if (isGirl) secondaryColor.copy(alpha = 0.5f) else primaryColor.copy(alpha = 0.4f),
                                     RoundedCornerShape(14.dp)
                                 ),
                             contentAlignment = Alignment.Center
                         ) {
                             StickmanExerciseCanvas(
-                                motionType = if (isWeek1To2Warmup) {
-                                    BiomechanicMotionType.WARMUP_JACKS
-                                } else {
-                                    BiomechanicMotionType.SQUAT_DRIVE
+                                motionType = when {
+                                    isGirl && primaryFocus == "Glutes & Booty" -> BiomechanicMotionType.GLUTE_BRIDGE
+                                    isGirl -> BiomechanicMotionType.LUNGE_SPLIT
+                                    isWeek1To2Warmup -> BiomechanicMotionType.WARMUP_JACKS
+                                    else -> BiomechanicMotionType.SQUAT_DRIVE
                                 },
                                 isGirl = isGirl,
                                 isPlaying = true,
@@ -392,7 +382,12 @@ fun SetupAndVitalsScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(
                                     selected = !isGirl,
-                                    onClick = { isGirl = false },
+                                    onClick = {
+                                        isGirl = false
+                                        if (primaryFocus !in ExerciseCatalog.boyGoalOptions) {
+                                            primaryFocus = "V-Taper & Muscle"
+                                        }
+                                    },
                                     label = { Text("Boy") },
                                     leadingIcon = {
                                         Icon(
@@ -401,11 +396,21 @@ fun SetupAndVitalsScreen(
                                             modifier = Modifier.size(16.dp)
                                         )
                                     },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        selectedLeadingIconColor = primaryColor
+                                    ),
                                     modifier = Modifier.weight(1f)
                                 )
                                 FilterChip(
                                     selected = isGirl,
-                                    onClick = { isGirl = true },
+                                    onClick = {
+                                        isGirl = true
+                                        if (primaryFocus !in ExerciseCatalog.girlGoalOptions) {
+                                            primaryFocus = "Glutes & Booty"
+                                        }
+                                    },
                                     label = { Text("Girl") },
                                     leadingIcon = {
                                         Icon(
@@ -415,9 +420,9 @@ fun SetupAndVitalsScreen(
                                         )
                                     },
                                     colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = Color(0xFFFF6EC7).copy(alpha = 0.22f),
-                                        selectedLabelColor = Color(0xFFFF9CE3),
-                                        selectedLeadingIconColor = Color(0xFFFF6EC7)
+                                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        selectedLeadingIconColor = secondaryColor
                                     ),
                                     modifier = Modifier.weight(1f)
                                 )
@@ -425,60 +430,243 @@ fun SetupAndVitalsScreen(
                         }
                     }
 
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
+                    // Dynamic Goal Picker
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                tint = if (isGirl) secondaryColor else primaryColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = if (isGirl) "Goal (Glutes & Sculpt)" else "Goal (Muscle & Strength)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isGirl) secondaryColor else primaryColor
+                            )
+                        }
+
+                        val activeGoals = if (isGirl) ExerciseCatalog.girlGoalOptions else ExerciseCatalog.boyGoalOptions
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            activeGoals.forEach { goal ->
+                                val selected = primaryFocus == goal
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { primaryFocus = goal },
+                                    label = { Text(goal, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = if (isGirl) {
+                                            MaterialTheme.colorScheme.secondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.primaryContainer
+                                        },
+                                        selectedLabelColor = if (isGirl) {
+                                            MaterialTheme.colorScheme.onSecondaryContainer
+                                        } else {
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        }
+                                    ),
+                                    modifier = Modifier.testTag("goal_chip_${goal.lowercase().replace(" ", "_")}")
+                                )
+                            }
+                        }
+                    }
+
+                    // Protein Shake & Week 1-2 Toggles
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .weight(1f)
+                                .border(1.dp, cardBorderColor, RoundedCornerShape(14.dp)),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                            shape = RoundedCornerShape(14.dp)
                         ) {
                             Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.SelfImprovement,
-                                    contentDescription = null,
-                                    tint = VoltLime,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.LocalDrink,
+                                        contentDescription = null,
+                                        tint = secondaryColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                     Text(
-                                        text = "New to Gym (Week 1–2 Mode)",
-                                        style = MaterialTheme.typography.titleSmall,
+                                        text = "Shake",
+                                        style = MaterialTheme.typography.labelLarge,
                                         fontWeight = FontWeight.Bold
                                     )
+                                }
+                                Switch(
+                                    checked = wantsProteinShake,
+                                    onCheckedChange = { wantsProteinShake = it },
+                                    modifier = Modifier.testTag("protein_shake_switch")
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(1.dp, cardBorderColor, RoundedCornerShape(14.dp)),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SelfImprovement,
+                                        contentDescription = null,
+                                        tint = primaryColor,
+                                        modifier = Modifier.size(18.dp)
+                                    )
                                     Text(
-                                        text = "Warmup + light full-body foundation",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        text = "Wk 1-2",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
+                                Switch(
+                                    checked = isWeek1To2Warmup,
+                                    onCheckedChange = {
+                                        isWeek1To2Warmup = it
+                                        if (it) fitnessLevel = "Beginner"
+                                    },
+                                    modifier = Modifier.testTag("week1to2_warmup_switch")
+                                )
                             }
-                            Switch(
-                                checked = isWeek1To2Warmup,
-                                onCheckedChange = {
-                                    isWeek1To2Warmup = it
-                                    if (it) fitnessLevel = "Beginner"
-                                },
-                                modifier = Modifier.testTag("week1to2_warmup_switch")
-                            )
                         }
                     }
                 }
             }
         }
 
-        // 3. AVAILABLE MACHINES & EQUIPMENT (20 OPTIONS + NO-EQUIPMENT)
+        // 2. Age, Weight, Height & Days/Week Sliders
         item {
             Card(
                 shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.border(1.dp, cardBorderColor, RoundedCornerShape(18.dp))
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
+                            .border(1.dp, cardBorderColor, RoundedCornerShape(12.dp))
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        VitalsStatColumn("AGE", "${ageSlider.roundToInt()}y", MaterialTheme.colorScheme.onSurface)
+                        VitalsStatColumn("BMI", "$liveBmi ($liveBmiCategory)", primaryColor)
+                        VitalsStatColumn("WT", "${weightSlider.roundToInt()}→${targetWeightSlider.roundToInt()}kg", MaterialTheme.colorScheme.onSurface)
+                        VitalsStatColumn("DAYS", "${weeklyGoalSlider.roundToInt()}d/wk", secondaryColor)
+                    }
+
+                    CompactVitalSlider(
+                        icon = Icons.Default.Cake,
+                        label = "Age",
+                        valueText = "${ageSlider.roundToInt()} yrs",
+                        value = ageSlider,
+                        range = 14f..75f,
+                        onValueChange = { ageSlider = it },
+                        testTag = "slider_age"
+                    )
+                    CompactVitalSlider(
+                        icon = Icons.Default.Height,
+                        label = "Height",
+                        valueText = "${heightSlider.roundToInt()} cm",
+                        value = heightSlider,
+                        range = 140f..210f,
+                        onValueChange = { heightSlider = it },
+                        testTag = "slider_height"
+                    )
+                    CompactVitalSlider(
+                        icon = Icons.Default.MonitorWeight,
+                        label = "Weight",
+                        valueText = "${weightSlider.roundToInt()} kg",
+                        value = weightSlider,
+                        range = 38f..160f,
+                        onValueChange = { weightSlider = it },
+                        testTag = "slider_weight"
+                    )
+                    CompactVitalSlider(
+                        icon = Icons.Default.MonitorWeight,
+                        label = "Target Wt",
+                        valueText = "${targetWeightSlider.roundToInt()} kg",
+                        value = targetWeightSlider,
+                        range = 38f..150f,
+                        onValueChange = { targetWeightSlider = it },
+                        testTag = "slider_target_weight"
+                    )
+                    CompactVitalSlider(
+                        icon = Icons.Default.LocalFireDepartment,
+                        label = "Days/Wk",
+                        valueText = "${weeklyGoalSlider.roundToInt()} days",
+                        value = weeklyGoalSlider,
+                        range = 2f..7f,
+                        steps = 4,
+                        onValueChange = {
+                            weeklyGoalSlider = it
+                            weeklyCalorieSlider = (it * 450f).coerceIn(900f, 5000f)
+                        },
+                        testTag = "slider_weekly_goal"
+                    )
+                    CompactVitalSlider(
+                        icon = Icons.Default.Favorite,
+                        label = "Rest HR",
+                        valueText = "${rhrSlider.roundToInt()} bpm",
+                        value = rhrSlider,
+                        range = 42f..100f,
+                        onValueChange = { rhrSlider = it },
+                        testTag = "slider_rhr"
+                    )
+                    CompactVitalSlider(
+                        icon = Icons.Default.Speed,
+                        label = "VO2 Max",
+                        valueText = "${vo2Slider.roundToInt()}",
+                        value = vo2Slider,
+                        range = 25f..75f,
+                        onValueChange = { vo2Slider = it },
+                        testTag = "slider_vo2"
+                    )
+                }
+            }
+        }
+
+        // 3. Available Equipment (20 Machines + No-Gear)
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.border(1.dp, cardBorderColor, RoundedCornerShape(18.dp))
             ) {
                 Column(
                     modifier = Modifier.padding(14.dp),
@@ -496,11 +684,11 @@ fun SetupAndVitalsScreen(
                             Icon(
                                 imageVector = Icons.Default.FitnessCenter,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = primaryColor,
                                 modifier = Modifier.size(18.dp)
                             )
                             Text(
-                                text = "GEAR (${selectedEquip.size}/${ExerciseCatalog.supportedEquipment.size})",
+                                text = "Equipment (${selectedEquip.size}/${ExerciseCatalog.supportedEquipment.size})",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
@@ -512,7 +700,7 @@ fun SetupAndVitalsScreen(
                                     selectedEquip.clear()
                                     selectedEquip.add("Bodyweight")
                                 },
-                                label = { Text("No-Equip") },
+                                label = { Text("No-Gear") },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.AccessibilityNew,
@@ -564,9 +752,9 @@ fun SetupAndVitalsScreen(
                                     }
                                 } else null,
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    selectedLabelColor = MaterialTheme.colorScheme.primary,
-                                    selectedLeadingIconColor = MaterialTheme.colorScheme.primary
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    selectedLeadingIconColor = primaryColor
                                 ),
                                 modifier = Modifier.testTag("equip_chip_${equip.lowercase().replace(" ", "_")}")
                             )
@@ -576,103 +764,13 @@ fun SetupAndVitalsScreen(
             }
         }
 
-        // 4. LIVE BMI & BIOMETRICS SLIDERS
-        item {
-            Card(
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFF142438), Color(0xFF0C1520))
-                                )
-                            )
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        VitalsStatColumn("BMI", "$liveBmi ($liveBmiCategory)", VoltLime)
-                        VitalsStatColumn("WEIGHT", "${weightSlider.roundToInt()} → ${targetWeightSlider.roundToInt()}kg", Color.White)
-                        VitalsStatColumn("RHR", "${rhrSlider.roundToInt()} bpm", Color(0xFF4CD964))
-                        VitalsStatColumn("VO2", "${vo2Slider.roundToInt()}", MaterialTheme.colorScheme.secondary)
-                    }
-
-                    CompactVitalSlider(
-                        icon = Icons.Default.Height,
-                        label = "Height",
-                        valueText = "${heightSlider.roundToInt()} cm",
-                        value = heightSlider,
-                        range = 140f..210f,
-                        onValueChange = { heightSlider = it },
-                        testTag = "slider_height"
-                    )
-                    CompactVitalSlider(
-                        icon = Icons.Default.MonitorWeight,
-                        label = "Weight",
-                        valueText = "${weightSlider.roundToInt()} kg",
-                        value = weightSlider,
-                        range = 40f..160f,
-                        onValueChange = { weightSlider = it },
-                        testTag = "slider_weight"
-                    )
-                    CompactVitalSlider(
-                        icon = Icons.Default.MonitorWeight,
-                        label = "Goal Wt",
-                        valueText = "${targetWeightSlider.roundToInt()} kg",
-                        value = targetWeightSlider,
-                        range = 40f..150f,
-                        onValueChange = { targetWeightSlider = it },
-                        testTag = "slider_target_weight"
-                    )
-                    CompactVitalSlider(
-                        icon = Icons.Default.Favorite,
-                        label = "Rest HR",
-                        valueText = "${rhrSlider.roundToInt()} bpm",
-                        value = rhrSlider,
-                        range = 42f..100f,
-                        onValueChange = { rhrSlider = it },
-                        testTag = "slider_rhr"
-                    )
-                    CompactVitalSlider(
-                        icon = Icons.Default.Speed,
-                        label = "VO2 Max",
-                        valueText = "${vo2Slider.roundToInt()}",
-                        value = vo2Slider,
-                        range = 25f..75f,
-                        onValueChange = { vo2Slider = it },
-                        testTag = "slider_vo2"
-                    )
-                    CompactVitalSlider(
-                        icon = Icons.Default.LocalFireDepartment,
-                        label = "Days/Wk",
-                        valueText = "${weeklyGoalSlider.roundToInt()} d • ${weeklyCalorieSlider.roundToInt()} kcal",
-                        value = weeklyGoalSlider,
-                        range = 2f..7f,
-                        steps = 4,
-                        onValueChange = {
-                            weeklyGoalSlider = it
-                            weeklyCalorieSlider = (it * 450f).coerceIn(900f, 5000f)
-                        },
-                        testTag = "slider_weekly_goal"
-                    )
-                }
-            }
-        }
-
-        // 5. SAVE BUTTON
+        // 4. Save Button
         item {
             Button(
                 onClick = {
                     onSaveSetup(
                         displayName,
+                        ageSlider.roundToInt(),
                         heightSlider.roundToInt().toLong(),
                         weightSlider.roundToInt().toLong(),
                         targetWeightSlider.roundToInt().toLong(),
@@ -684,6 +782,7 @@ fun SetupAndVitalsScreen(
                         primaryFocus,
                         selectedEquip.toList(),
                         isGirl,
+                        wantsProteinShake,
                         isWeek1To2Warmup,
                         currentProfile.lastFeedbackRpe
                     )
@@ -695,17 +794,168 @@ fun SetupAndVitalsScreen(
                     .testTag("save_setup_vitals_button"),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
+                    containerColor = primaryColor,
                     contentColor = MaterialTheme.colorScheme.onPrimary
                 )
             ) {
                 Icon(imageVector = Icons.Default.CheckCircle, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isSaving) "SAVING..." else "SAVE GEAR & VITALS",
+                    text = if (isSaving) "SAVING..." else "SAVE & START",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+
+        // 5. Custom Schedule Exercise Builder
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier.border(
+                    width = 1.dp,
+                    color = primaryColor.copy(alpha = 0.45f),
+                    shape = RoundedCornerShape(18.dp)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.EditCalendar,
+                                contentDescription = null,
+                                tint = primaryColor,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Custom Routine (${pickedCustomExercises.size})",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Pick exercises for Custom split",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                if (pickedCustomExercises.isNotEmpty()) {
+                                    onSaveCustomRoutine(pickedCustomExercises.toList())
+                                }
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryColor,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier.testTag("save_custom_schedule_button")
+                        ) {
+                            Text("Apply", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("All", "Glutes", "Bodyweight", "Legs", "Back", "Push").forEach { cat ->
+                            FilterChip(
+                                selected = exerciseFilter == cat,
+                                onClick = { exerciseFilter = cat },
+                                label = { Text(cat) }
+                            )
+                        }
+                    }
+
+                    val visibleCatalog = ExerciseCatalog.allExercises
+                        .filter { it.id != "ex_protein_shake_recovery" }
+                        .filter { ex ->
+                            when (exerciseFilter) {
+                                "Glutes" -> WorkoutSplitDay.GLUTE_TONE_SCULPT in ex.splitTags || ex.muscleGroup.contains("Glute", ignoreCase = true)
+                                "Bodyweight" -> ex.requiredEquipment.equals("Bodyweight", ignoreCase = true)
+                                "Legs" -> WorkoutSplitDay.LEGS_GLUTES in ex.splitTags
+                                "Back" -> WorkoutSplitDay.BACK_BICEPS in ex.splitTags
+                                "Push" -> WorkoutSplitDay.PUSH_DAY in ex.splitTags
+                                else -> true
+                            }
+                        }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        visibleCatalog.take(12).forEach { ex ->
+                            val isPicked = pickedCustomExercises.contains(ex.id)
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (isPicked) primaryColor.copy(alpha = 0.45f) else Color.Transparent,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable {
+                                        if (isPicked && pickedCustomExercises.size > 1) {
+                                            pickedCustomExercises.remove(ex.id)
+                                        } else if (!isPicked) {
+                                            pickedCustomExercises.add(ex.id)
+                                        }
+                                    },
+                                color = if (isPicked) {
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = ex.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${ex.requiredEquipment} • ${ex.muscleGroup}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = if (isPicked) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                        contentDescription = null,
+                                        tint = if (isPicked) primaryColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -721,7 +971,8 @@ private fun VitalsStatColumn(
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
-            color = Color(0xFF96ACC2)
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.SemiBold
         )
         Text(
             text = value,
@@ -768,6 +1019,7 @@ private fun CompactVitalSlider(
             Text(
                 text = valueText,
                 style = MaterialTheme.typography.labelMedium.copy(fontFamily = JetBrainsMonoFamily),
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
         }

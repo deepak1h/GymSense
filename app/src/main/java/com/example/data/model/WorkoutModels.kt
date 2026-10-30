@@ -16,14 +16,15 @@ enum class WorkoutSplitDay(
     val shortTitle: String,
     val tagLine: String
 ) {
-    AUTO("AUTO", "Auto Split", "Smart Rotation"),
-    WARMUP_LIGHT("WARMUP_LIGHT", "Wk 1-2 Warmup", "Warmup + Light Full Body"),
-    LEGS_GLUTES("LEGS_GLUTES", "Leg Day", "Quads, Glutes & Hamstrings"),
-    BACK_BICEPS("BACK_BICEPS", "Back Day", "Lats, Rhomboids & Biceps"),
-    PUSH_DAY("PUSH_DAY", "Push Day", "Chest, Shoulders & Triceps"),
-    COMBO_SPLIT("COMBO_SPLIT", "Combo Day", "Legs + Back + Core"),
-    ZERO_EQUIP("ZERO_EQUIP", "No-Equip", "100% Bodyweight Anywhere"),
-    CUSTOM_MY_PLAN("CUSTOM_MY_PLAN", "My Plan", "Your Custom Exercise Schedule");
+    AUTO("AUTO", "Auto", "Smart Rotation"),
+    WARMUP_LIGHT("WARMUP_LIGHT", "Warmup", "Wk 1-2 Light Full Body"),
+    GLUTE_TONE_SCULPT("GLUTE_TONE_SCULPT", "Glutes", "Booty, Hips & Waist Sculpt"),
+    LEGS_GLUTES("LEGS_GLUTES", "Legs", "Quads, Glutes & Hamstrings"),
+    BACK_BICEPS("BACK_BICEPS", "Back", "Lats, Posture & Arms"),
+    PUSH_DAY("PUSH_DAY", "Push", "Chest, Shoulders & Tone"),
+    COMBO_SPLIT("COMBO_SPLIT", "Full", "Total Body + Core"),
+    ZERO_EQUIP("ZERO_EQUIP", "No-Gear", "100% Bodyweight"),
+    CUSTOM_MY_PLAN("CUSTOM_MY_PLAN", "Custom", "Your Selected Routine");
 
     val subtitle: String
         get() = tagLine
@@ -71,8 +72,36 @@ data class UserProfile(
     val genderLabel: String
         get() = if (isGirl) "Girl" else "Boy"
 
+    val ageYears: Int
+        get() = metaValue("AGE", "24").toIntOrNull()?.coerceIn(13, 90) ?: 24
+
+    val wantsProteinShake: Boolean
+        get() = metaValue("PR", "1") == "1"
+
+    val waterAlertsEnabled: Boolean
+        get() = metaValue("WA", "1") == "1"
+
+    val waterSlotsMask: Int
+        get() = metaValue("WT", "0").toIntOrNull() ?: 0
+
+    val todayWaterGlassesCount: Int
+        get() = (0 until 7).count { idx -> (waterSlotsMask and (1 shl idx)) != 0 }
+
+    val waterHistoryMap: Map<String, Int>
+        get() = metaValue("WH", "")
+            .split(";")
+            .mapNotNull { entry ->
+                val parts = entry.split("=")
+                if (parts.size == 2) {
+                    val day = parts[0].trim()
+                    val count = parts[1].trim().toIntOrNull()
+                    if (day.isNotEmpty() && count != null) day to count.coerceIn(0, 7) else null
+                } else null
+            }
+            .toMap()
+
     val isWeek1To2Warmup: Boolean
-        get() = metaValue("W12", if (fitnessLevel == "Beginner") "1" else "0") == "1"
+        get() = metaValue("W12", "0") == "1"
 
     val splitOverrideCode: String
         get() = metaValue("SP", "AUTO")
@@ -89,6 +118,10 @@ data class UserProfile(
     fun withUpdatedPreferences(
         equipment: List<String> = equipmentList,
         isGirl: Boolean = this.isGirl,
+        ageYears: Int = this.ageYears,
+        wantsProteinShake: Boolean = this.wantsProteinShake,
+        waterAlertsEnabled: Boolean = this.waterAlertsEnabled,
+        waterSlotsMask: Int = this.waterSlotsMask,
         isWeek1To2Warmup: Boolean = this.isWeek1To2Warmup,
         splitOverrideCode: String = this.splitOverrideCode,
         missedDaysOffset: Int = this.missedDaysOffset,
@@ -97,8 +130,19 @@ data class UserProfile(
         val equipPart = (equipment + "Bodyweight").distinct().joinToString(",")
         val gVal = if (isGirl) "Girl" else "Boy"
         val wVal = if (isWeek1To2Warmup) "1" else "0"
+        val prVal = if (wantsProteinShake) "1" else "0"
+        val waVal = if (waterAlertsEnabled) "1" else "0"
         val aiVal = aiPinnedIds.take(8).joinToString(",")
-        val combined = "$equipPart|G:$gVal|W12:$wVal|SP:$splitOverrideCode|OFF:$missedDaysOffset|AI:$aiVal"
+        val todayCount = (0 until 7).count { idx -> (waterSlotsMask and (1 shl idx)) != 0 }
+        val updatedHistory = waterHistoryMap.toMutableMap().apply {
+            put(todayDayKey(), todayCount)
+        }
+        val whVal = updatedHistory.entries
+            .sortedByDescending { it.key }
+            .take(7)
+            .joinToString(";") { "${it.key}=${it.value}" }
+
+        val combined = "$equipPart|G:$gVal|AGE:${ageYears.coerceIn(13, 90)}|PR:$prVal|WA:$waVal|WT:$waterSlotsMask|WH:$whVal|W12:$wVal|SP:$splitOverrideCode|OFF:$missedDaysOffset|AI:$aiVal"
             .take(500)
         return copy(equipmentCsv = combined)
     }
@@ -120,11 +164,11 @@ data class UserProfile(
             else -> "High BMI"
         }
 
-    // Mifflin-St Jeor + Activity Factor bioscience estimate (personalized for Boy / Girl)
+    // Mifflin-St Jeor + Activity Factor bioscience estimate (personalized for Boy / Girl & Age)
     val estimatedDailyTdeeKcal: Int
         get() {
             val genderConstant = if (isGirl) -161 else 5
-            val bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * 26) + genderConstant
+            val bmr = (10 * weightKg) + (6.25 * heightCm) - (5 * ageYears) + genderConstant
             val multiplier = when (weeklyWorkoutGoal) {
                 in 1..2 -> 1.375
                 in 3..5 -> 1.55
@@ -923,52 +967,274 @@ object ExerciseCatalog {
             ),
             bioscienceNote = "Trains fast-twitch core flexion and total-body power.",
             caloriesPerSet = 30
+        ),
+
+        // --- GIRL-FOCUSED GLUTE, HIP SCULPT, HOURGLASS & TONING EXERCISES ---
+        ExerciseTemplate(
+            id = "ex_cable_glute_kickback",
+            name = "Cable Glute Kickbacks",
+            muscleGroup = "Glutes & Upper Shelf",
+            requiredEquipment = "Cable Machine",
+            splitTags = listOf(
+                WorkoutSplitDay.GLUTE_TONE_SCULPT,
+                WorkoutSplitDay.LEGS_GLUTES
+            ),
+            isWarmupOrBeginnerFriendly = true,
+            baseSets = 3,
+            baseRepsPerSet = 15,
+            baseWeightKg = 12,
+            restSeconds = 45,
+            tempoCode = "2-1-2-1",
+            motionType = BiomechanicMotionType.LUNGE_SPLIT,
+            formCues = listOf(
+                "Hinge torso 30 degrees forward holding cable tower",
+                "Drive heel back & slightly out 15 degrees to target glute medius",
+                "Squeeze glute at peak for 1 full second without arching lower back"
+            ),
+            bioscienceNote = "Isolates upper and lower glute fibers with constant cable tension.",
+            caloriesPerSet = 28
+        ),
+        ExerciseTemplate(
+            id = "ex_sumo_dumbbell_squat",
+            name = "Sumo Squat Pulse",
+            muscleGroup = "Glutes & Inner Thighs",
+            requiredEquipment = "Dumbbells",
+            splitTags = listOf(
+                WorkoutSplitDay.GLUTE_TONE_SCULPT,
+                WorkoutSplitDay.LEGS_GLUTES,
+                WorkoutSplitDay.WARMUP_LIGHT
+            ),
+            isWarmupOrBeginnerFriendly = true,
+            baseSets = 3,
+            baseRepsPerSet = 15,
+            baseWeightKg = 14,
+            restSeconds = 50,
+            tempoCode = "2-2-1-0",
+            motionType = BiomechanicMotionType.SQUAT_DRIVE,
+            formCues = listOf(
+                "Take a wide stance with toes turned out 45 degrees",
+                "Lower vertically keeping knees tracking over toes",
+                "Add a small pulse at the bottom before driving up through heels"
+            ),
+            bioscienceNote = "Maximizes glute and adductor recruitment for lower-body toning.",
+            caloriesPerSet = 34
+        ),
+        ExerciseTemplate(
+            id = "ex_curtsy_lunge",
+            name = "Sculpting Curtsy Lunges",
+            muscleGroup = "Side Glutes & Hips",
+            requiredEquipment = "Bodyweight",
+            splitTags = listOf(
+                WorkoutSplitDay.GLUTE_TONE_SCULPT,
+                WorkoutSplitDay.ZERO_EQUIP,
+                WorkoutSplitDay.LEGS_GLUTES,
+                WorkoutSplitDay.WARMUP_LIGHT
+            ),
+            isWarmupOrBeginnerFriendly = true,
+            baseSets = 3,
+            baseRepsPerSet = 14,
+            baseWeightKg = 0,
+            restSeconds = 45,
+            tempoCode = "2-1-1-0",
+            motionType = BiomechanicMotionType.LUNGE_SPLIT,
+            formCues = listOf(
+                "Step back leg diagonally behind front heel",
+                "Keep hips squared forward and chest tall",
+                "Drive through front heel to sculpt outer glute shelf"
+            ),
+            bioscienceNote = "Targets gluteus medius and hip stabilizers for hourglass symmetry.",
+            caloriesPerSet = 26
+        ),
+        ExerciseTemplate(
+            id = "ex_pilates_hundred_core",
+            name = "Pilates Core & Waist Sculpt",
+            muscleGroup = "Deep Abs & Waistline",
+            requiredEquipment = "Bodyweight",
+            splitTags = listOf(
+                WorkoutSplitDay.GLUTE_TONE_SCULPT,
+                WorkoutSplitDay.ZERO_EQUIP,
+                WorkoutSplitDay.WARMUP_LIGHT,
+                WorkoutSplitDay.COMBO_SPLIT
+            ),
+            isWarmupOrBeginnerFriendly = true,
+            baseSets = 3,
+            baseRepsPerSet = 20,
+            baseWeightKg = 0,
+            restSeconds = 40,
+            tempoCode = "2-1-2-1",
+            motionType = BiomechanicMotionType.CORE_PLANK,
+            formCues = listOf(
+                "Draw navel toward spine to engage transverse abdominis",
+                "Keep ribs knitted down with controlled rhythmic breathing",
+                "Extend legs at 45 degrees with long neck posture"
+            ),
+            bioscienceNote = "Tightens deep abdominal wall without widening the oblique waist.",
+            caloriesPerSet = 22
+        ),
+        ExerciseTemplate(
+            id = "ex_band_hip_abduction",
+            name = "Banded Glute Abductions",
+            muscleGroup = "Upper Glutes & Hips",
+            requiredEquipment = "Resistance Bands",
+            splitTags = listOf(
+                WorkoutSplitDay.GLUTE_TONE_SCULPT,
+                WorkoutSplitDay.LEGS_GLUTES,
+                WorkoutSplitDay.WARMUP_LIGHT
+            ),
+            isWarmupOrBeginnerFriendly = true,
+            baseSets = 3,
+            baseRepsPerSet = 18,
+            baseWeightKg = 0,
+            restSeconds = 40,
+            tempoCode = "1-2-1-0",
+            motionType = BiomechanicMotionType.GLUTE_BRIDGE,
+            formCues = listOf(
+                "Place mini-band just above knees in a hip bridge or seated position",
+                "Press knees outward against band tension and hold 2 seconds",
+                "Maintain pelvic tuck throughout the set"
+            ),
+            bioscienceNote = "High metabolic stress on gluteus medius for hip rounding and knee alignment.",
+            caloriesPerSet = 24
+        ),
+
+        // --- PROTEIN SHAKE RECOVERY SCHEDULE ITEM ---
+        ExerciseTemplate(
+            id = "ex_protein_shake_recovery",
+            name = "Protein Shake (25–30g Whey/Plant)",
+            muscleGroup = "Recovery & Muscle Synthesis",
+            requiredEquipment = "Bodyweight",
+            splitTags = emptyList(),
+            isWarmupOrBeginnerFriendly = true,
+            baseSets = 1,
+            baseRepsPerSet = 1,
+            baseWeightKg = 0,
+            restSeconds = 10,
+            tempoCode = "POST-WORKOUT",
+            motionType = BiomechanicMotionType.WARMUP_JACKS,
+            formCues = listOf(
+                "Mix 1 scoop (25–30g) protein with 300ml cold water or milk",
+                "Drink within 45 minutes post-workout to spike leucine synthesis",
+                "Pair with 300ml water to stay on your 3-hour hydration schedule"
+            ),
+            bioscienceNote = "Provides essential amino acids for myofibrillar repair.",
+            caloriesPerSet = 120
         )
     )
 
+    val girlGoalOptions = listOf(
+        "Glutes & Booty",
+        "Toned & Lean",
+        "Hourglass & Waist",
+        "Core & Posture"
+    )
+
+    val boyGoalOptions = listOf(
+        "V-Taper & Muscle",
+        "Strength & Mass",
+        "Shred & Athletic",
+        "Full Body Tone"
+    )
+
     fun resolveTodaySplit(profile: UserProfile): WorkoutSplitDay {
-        // 1. If user explicitly picked a split override ("Go Against Schedule"), honor it
         val override = WorkoutSplitDay.entries.firstOrNull {
             it.code == profile.splitOverrideCode && it != WorkoutSplitDay.AUTO
         }
         if (override != null) return override
 
-        // 2. If user is in Week 1-2 Beginner Warmup mode, default to Warmup & Light Full Body
         if (profile.isWeek1To2Warmup) {
             return WorkoutSplitDay.WARMUP_LIGHT
         }
 
-        // 3. Otherwise rotate daily across Leg Day -> Back Day -> Push Day -> Combo Day, shifted by missedDaysOffset
-        val rotation = listOf(
-            WorkoutSplitDay.LEGS_GLUTES,
-            WorkoutSplitDay.BACK_BICEPS,
-            WorkoutSplitDay.PUSH_DAY,
-            WorkoutSplitDay.COMBO_SPLIT
-        )
+        val rotation = if (profile.isGirl) {
+            when (profile.primaryFocus) {
+                "Glutes & Booty", "Hourglass & Waist" -> listOf(
+                    WorkoutSplitDay.GLUTE_TONE_SCULPT,
+                    WorkoutSplitDay.BACK_BICEPS,
+                    WorkoutSplitDay.LEGS_GLUTES,
+                    WorkoutSplitDay.COMBO_SPLIT
+                )
+                else -> listOf(
+                    WorkoutSplitDay.GLUTE_TONE_SCULPT,
+                    WorkoutSplitDay.COMBO_SPLIT,
+                    WorkoutSplitDay.LEGS_GLUTES,
+                    WorkoutSplitDay.BACK_BICEPS
+                )
+            }
+        } else {
+            listOf(
+                WorkoutSplitDay.LEGS_GLUTES,
+                WorkoutSplitDay.BACK_BICEPS,
+                WorkoutSplitDay.PUSH_DAY,
+                WorkoutSplitDay.COMBO_SPLIT
+            )
+        }
         val dayOfYear = Calendar.getInstance().get(Calendar.DAY_OF_YEAR)
         val shifted = Math.floorMod(dayOfYear + profile.missedDaysOffset, rotation.size)
         return rotation[shifted]
     }
 
+    /**
+     * Builds an equipment- and fitness-level-aware recommended exercise list for the Auto-Schedule popup.
+     */
+    fun recommendExercisesForEquipmentAndLevel(profile: UserProfile): Pair<String, List<String>> {
+        val availableEquip = (profile.equipmentList + "Bodyweight").map { it.lowercase() }.toSet()
+        val workoutCatalog = allExercises.filter { it.id != "ex_protein_shake_recovery" }
+        val matchingEquip = workoutCatalog.filter { ex ->
+            availableEquip.contains(ex.requiredEquipment.lowercase())
+        }.ifEmpty { workoutCatalog }
+
+        val ranked = matchingEquip.sortedByDescending { ex ->
+            var score = 0
+            if (ex.id == "ex_warmup_jumping_jacks") score += 30
+            if (!ex.requiredEquipment.equals("Bodyweight", ignoreCase = true)) score += 12
+            if (profile.fitnessLevel.equals("Beginner", ignoreCase = true) && ex.isWarmupOrBeginnerFriendly) {
+                score += 8
+            }
+            if (profile.fitnessLevel.equals("Advanced", ignoreCase = true) && ex.baseWeightKg >= 30) {
+                score += 8
+            }
+            if (profile.isGirl) {
+                if (WorkoutSplitDay.GLUTE_TONE_SCULPT in ex.splitTags) score += 16
+                if (ex.muscleGroup.contains("Glute", ignoreCase = true) ||
+                    ex.muscleGroup.contains("Core", ignoreCase = true) ||
+                    ex.muscleGroup.contains("Waist", ignoreCase = true)
+                ) score += 12
+            } else {
+                if (WorkoutSplitDay.PUSH_DAY in ex.splitTags || WorkoutSplitDay.BACK_BICEPS in ex.splitTags || WorkoutSplitDay.LEGS_GLUTES in ex.splitTags) {
+                    score += 12
+                }
+            }
+            score
+        }
+
+        val pickedIds = ranked.take(6).map { it.id }
+        val title = if (profile.isGirl) {
+            "${profile.fitnessLevel} ${profile.primaryFocus}"
+        } else {
+            "${profile.fitnessLevel} ${profile.primaryFocus}"
+        }
+        return title.take(24) to pickedIds
+    }
+
     fun buildDynamicSchedule(
         profile: UserProfile,
         todayLogs: List<WorkoutLog>,
+        allHistoricalLogs: List<WorkoutLog> = todayLogs,
         customRoutineIds: List<String> = emptyList(),
         todayExtraIds: List<String> = emptyList()
     ): List<ScheduledExercise> {
         val availableEquip = (profile.equipmentList + "Bodyweight").map { it.lowercase() }.toSet()
         val activeSplit = resolveTodaySplit(profile)
 
-        // Filter exercises that match user's available equipment (always including Bodyweight)
-        val equipFiltered = allExercises.filter { ex ->
+        val workoutCatalog = allExercises.filter { it.id != "ex_protein_shake_recovery" }
+        val equipFiltered = workoutCatalog.filter { ex ->
             availableEquip.contains(ex.requiredEquipment.lowercase())
         }
 
-        // If AI pinned specific exercise IDs for this user, prioritize those first
         val pinnedIds = profile.aiPinnedExerciseIds
         val baseSelection = when {
             activeSplit == WorkoutSplitDay.CUSTOM_MY_PLAN && customRoutineIds.isNotEmpty() -> {
-                customRoutineIds.mapNotNull { id -> allExercises.firstOrNull { it.id == id } }
+                customRoutineIds.mapNotNull { id -> workoutCatalog.firstOrNull { it.id == id } }
             }
             pinnedIds.isNotEmpty() && profile.splitOverrideCode == "AUTO" && !profile.isWeek1To2Warmup -> {
                 val pinned = pinnedIds.mapNotNull { id -> equipFiltered.firstOrNull { it.id == id } }
@@ -979,44 +1245,72 @@ object ExerciseCatalog {
                 equipFiltered.filter { it.isWarmupOrBeginnerFriendly }
             }
             activeSplit == WorkoutSplitDay.ZERO_EQUIP -> {
-                allExercises.filter { it.requiredEquipment.equals("Bodyweight", ignoreCase = true) }
+                workoutCatalog.filter { it.requiredEquipment.equals("Bodyweight", ignoreCase = true) }
             }
             else -> {
-                val warmup = allExercises.firstOrNull { it.id == "ex_warmup_jumping_jacks" }
+                val warmup = workoutCatalog.firstOrNull { it.id == "ex_warmup_jumping_jacks" }
                 val splitEquip = equipFiltered.filter {
                     activeSplit in it.splitTags && !it.requiredEquipment.equals("Bodyweight", ignoreCase = true)
                 }
-                val splitBodyweight = allExercises.filter {
+                val splitBodyweight = workoutCatalog.filter {
                     activeSplit in it.splitTags && it.requiredEquipment.equals("Bodyweight", ignoreCase = true)
                 }
                 (listOfNotNull(warmup) + splitEquip + splitBodyweight).distinctBy { it.id }
             }
         }.ifEmpty {
-            allExercises.filter { it.requiredEquipment.equals("Bodyweight", ignoreCase = true) }
+            workoutCatalog.filter { it.requiredEquipment.equals("Bodyweight", ignoreCase = true) }
         }
 
+        // Personalize exercise priority for Girl goals vs Boy goals
         val sortedCore = if (activeSplit == WorkoutSplitDay.CUSTOM_MY_PLAN && customRoutineIds.isNotEmpty()) {
             baseSelection
         } else if (profile.isGirl) {
             baseSelection.sortedByDescending { ex ->
-                when {
-                    ex.id.startsWith("ex_warmup") -> 10
-                    ex.motionType == BiomechanicMotionType.GLUTE_BRIDGE ||
-                        ex.motionType == BiomechanicMotionType.SQUAT_DRIVE ||
-                        ex.motionType == BiomechanicMotionType.LUNGE_SPLIT -> 8
-                    else -> 5
+                val goalBoost = when (profile.primaryFocus) {
+                    "Glutes & Booty" -> if (
+                        ex.muscleGroup.contains("Glute", ignoreCase = true) ||
+                        ex.motionType == BiomechanicMotionType.GLUTE_BRIDGE ||
+                        ex.motionType == BiomechanicMotionType.LUNGE_SPLIT
+                    ) 12 else 4
+                    "Toned & Lean" -> if (
+                        ex.requiredEquipment == "Bodyweight" ||
+                        ex.requiredEquipment == "Dumbbells" ||
+                        ex.requiredEquipment == "Resistance Bands"
+                    ) 10 else 5
+                    "Hourglass & Waist" -> if (
+                        ex.muscleGroup.contains("Glute", ignoreCase = true) ||
+                        ex.muscleGroup.contains("Waist", ignoreCase = true) ||
+                        ex.muscleGroup.contains("Lat", ignoreCase = true)
+                    ) 11 else 5
+                    else -> if (ex.muscleGroup.contains("Core", ignoreCase = true)) 11 else 6
                 }
-            }.take(7)
+                if (ex.id.startsWith("ex_warmup")) 15 else goalBoost
+            }.take(6)
         } else {
             baseSelection.sortedByDescending { ex ->
-                if (ex.id.startsWith("ex_warmup")) 10 else 5
-            }.take(7)
+                val boyBoost = when (profile.primaryFocus) {
+                    "Strength & Mass" -> if (ex.baseWeightKg >= 40) 11 else 5
+                    "V-Taper & Muscle" -> if (
+                        ex.muscleGroup.contains("Lat", ignoreCase = true) ||
+                        ex.muscleGroup.contains("Chest", ignoreCase = true) ||
+                        ex.muscleGroup.contains("Delt", ignoreCase = true)
+                    ) 11 else 5
+                    else -> 6
+                }
+                if (ex.id.startsWith("ex_warmup")) 15 else boyBoost
+            }.take(6)
         }
 
         val extraTemplates = todayExtraIds.mapNotNull { id ->
             allExercises.firstOrNull { it.id == id }
         }
-        val orderedTemplates = (sortedCore + extraTemplates).distinctBy { it.id }
+        val proteinTemplate = if (profile.wantsProteinShake) {
+            listOfNotNull(allExercises.firstOrNull { it.id == "ex_protein_shake_recovery" })
+        } else {
+            emptyList()
+        }
+
+        val orderedTemplates = (sortedCore + extraTemplates + proteinTemplate).distinctBy { it.id }
 
         val rpe = profile.lastFeedbackRpe.toInt()
         val levelMultiplier = when {
@@ -1025,50 +1319,50 @@ object ExerciseCatalog {
             profile.fitnessLevel == "Advanced" -> 1.20
             else -> 1.00
         }
-        val genderLoadFactor = if (profile.isGirl) 0.78 else 1.00
+        // Girl mode uses tailored toning/sculpting weights & higher sculpting reps
+        val genderLoadFactor = if (profile.isGirl) 0.68 else 1.00
+        val genderRepBonus = if (profile.isGirl && profile.primaryFocus in listOf("Toned & Lean", "Hourglass & Waist", "Glutes & Booty")) 2 else 0
 
         val (setDelta, repDelta, loadFactor, reason) = when {
-            profile.isWeek1To2Warmup -> Quadruple(
-                -1,
-                2,
-                0.75,
-                "Wk 1-2 Light Warmup & Form Mode"
-            )
-            rpe <= 5 -> Quadruple(
-                1,
-                2,
-                1.10,
-                "+10% Load & +1 Set (Prior RPE $rpe)"
-            )
-            rpe in 6..7 -> Quadruple(
-                0,
-                1,
-                1.05,
-                "+5% Progressive Load (RPE $rpe)"
-            )
-            rpe == 8 -> Quadruple(
-                0,
-                0,
-                1.00,
-                "Optimal Target Load (RPE 8)"
-            )
-            else -> Quadruple(
-                -1,
-                -2,
-                0.90,
-                "-10% Recovery Deload (RPE $rpe)"
-            )
+            profile.isWeek1To2Warmup -> Quadruple(-1, 2, 0.75, "Wk 1-2 Light")
+            rpe <= 5 -> Quadruple(1, 2, 1.10, "Progressive")
+            rpe in 6..7 -> Quadruple(0, 1, 1.05, "Optimal")
+            rpe == 8 -> Quadruple(0, 0, 1.00, "Target")
+            else -> Quadruple(-1, -2, 0.90, "Recovery")
         }
 
         return orderedTemplates.map { template ->
-            val adjustedSets = (template.baseSets + setDelta).coerceIn(2, 5)
-            val adjustedReps = (template.baseRepsPerSet + repDelta).coerceIn(6, 25)
+            if (template.id == "ex_protein_shake_recovery") {
+                val completedLog = todayLogs.firstOrNull { it.exerciseId == template.id }
+                return@map ScheduledExercise(
+                    template = template,
+                    targetSets = 1,
+                    targetRepsPerSet = 1,
+                    recommendedWeightKg = 0,
+                    adjustmentReason = "Post-Workout Shake",
+                    isCompletedToday = completedLog != null,
+                    completedLog = completedLog
+                )
+            }
+
+            // SILENT CONSISTENCY PROGRESSION:
+            // Count how many times the user has completed this exact exercise previously
+            val consistencyCount = allHistoricalLogs.count { it.exerciseId == template.id }
+            val silentExtraSets = (consistencyCount / 4).coerceIn(0, 2)
+            val silentExtraReps = (consistencyCount / 2).coerceIn(0, 6)
+            val silentExtraWeightKg = if (profile.isGirl) {
+                ((consistencyCount / 2) * 1).coerceIn(0, 12)
+            } else {
+                ((consistencyCount / 2) * 2).coerceIn(0, 24)
+            }
+
+            val adjustedSets = (template.baseSets + setDelta + silentExtraSets).coerceIn(2, 6)
+            val adjustedReps = (template.baseRepsPerSet + repDelta + genderRepBonus + silentExtraReps).coerceIn(6, 30)
             val adjustedWeight = if (template.baseWeightKg == 0) {
                 0
             } else {
-                (template.baseWeightKg * levelMultiplier * genderLoadFactor * loadFactor)
-                    .roundToInt()
-                    .coerceAtLeast(4)
+                ((template.baseWeightKg * levelMultiplier * genderLoadFactor * loadFactor).roundToInt() + silentExtraWeightKg)
+                    .coerceAtLeast(3)
             }
             val completedLog = todayLogs.firstOrNull { it.exerciseId == template.id }
 

@@ -47,16 +47,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.UserProfile
 import com.example.data.model.WorkoutLog
 import com.example.data.model.todayDayKey
 import com.example.ui.theme.JetBrainsMonoFamily
-import com.example.ui.theme.VoltLime
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import kotlin.math.roundToInt
 
 private data class ConsistencyGoalItem(
     val title: String,
@@ -82,30 +81,35 @@ fun GoalsAndMilestonesScreen(
     val todayKey = todayDayKey()
     var selectedCalendarDayKey by remember { mutableStateOf(todayKey) }
 
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val secondaryColor = MaterialTheme.colorScheme.secondary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
+    val cardBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+
     val consistencyGoals = listOf(
         ConsistencyGoalItem(
-            title = "1 Week Consistency",
-            subtitle = "Complete 7 active workout days",
+            title = "1 Week Streak",
+            subtitle = "7 active workout days",
             targetDays = 7,
-            accent = Color(0xFF00E676)
+            accent = primaryColor
         ),
         ConsistencyGoalItem(
-            title = "2 Weeks Momentum",
-            subtitle = "Complete 14 active workout days",
+            title = "2 Weeks Streak",
+            subtitle = "14 active workout days",
             targetDays = 14,
-            accent = Color(0xFF00B0FF)
+            accent = secondaryColor
         ),
         ConsistencyGoalItem(
-            title = "30 Days Habit Builder",
-            subtitle = "Complete 30 active workout days",
+            title = "30 Days Habit",
+            subtitle = "30 active workout days",
             targetDays = 30,
-            accent = Color(0xFFFFB300)
+            accent = tertiaryColor
         ),
         ConsistencyGoalItem(
-            title = "100 Days Legend Club",
-            subtitle = "Reach 100 completed workout days",
+            title = "100 Days Club",
+            subtitle = "100 completed workout days",
             targetDays = 100,
-            accent = Color(0xFFFF5252)
+            accent = Color(0xFFE11D48)
         )
     )
 
@@ -117,9 +121,11 @@ fun GoalsAndMilestonesScreen(
             .testTag("goals_and_milestones_screen"),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. LOCAL PROGRESS & LIFETIME REPS SUMMARY BAR
+        // 1. Clean Summary Card
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, cardBorderColor, RoundedCornerShape(18.dp)),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             shape = RoundedCornerShape(18.dp)
         ) {
@@ -139,27 +145,27 @@ fun GoalsAndMilestonesScreen(
                         Icon(
                             imageVector = Icons.Default.WorkspacePremium,
                             contentDescription = null,
-                            tint = VoltLime,
+                            tint = primaryColor,
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
-                            text = "SAVED PROGRESS REPORT",
-                            style = MaterialTheme.typography.labelLarge,
+                            text = "Progress",
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = VoltLime
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                     Surface(
-                        color = VoltLime.copy(alpha = 0.16f),
+                        color = MaterialTheme.colorScheme.primaryContainer,
                         shape = RoundedCornerShape(8.dp)
                     ) {
                         Text(
-                            text = "$activeDaysCount / 100 DAYS",
+                            text = "$activeDaysCount / 100 Days",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontFamily = JetBrainsMonoFamily,
                                 fontWeight = FontWeight.Bold
                             ),
-                            color = VoltLime,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -171,33 +177,33 @@ fun GoalsAndMilestonesScreen(
                 ) {
                     StatSummaryMiniBox(
                         modifier = Modifier.weight(1f),
-                        label = "EXERCISES",
+                        label = "WORKOUTS",
                         value = "$totalExercisesDone",
-                        color = VoltLime
+                        color = primaryColor
                     )
                     StatSummaryMiniBox(
                         modifier = Modifier.weight(1f),
-                        label = "TOTAL REPS",
+                        label = "REPS",
                         value = "$totalRepsDone",
-                        color = MaterialTheme.colorScheme.secondary
+                        color = secondaryColor
                     )
                     StatSummaryMiniBox(
                         modifier = Modifier.weight(1f),
                         label = "SETS",
                         value = "$totalSetsDone",
-                        color = Color(0xFFFFB300)
+                        color = tertiaryColor
                     )
                     StatSummaryMiniBox(
                         modifier = Modifier.weight(1f),
                         label = "KCAL",
                         value = "$totalCaloriesDone",
-                        color = Color(0xFFFF6EC7)
+                        color = Color(0xFFE11D48)
                     )
                 }
             }
         }
 
-        // 2. MONTHLY CONSISTENCY CALENDAR (Marks Each Day with Progress)
+        // 2. Monthly Consistency Calendar
         ConsistencyCalendarCard(
             logsByDay = logsByDay,
             todayKey = todayKey,
@@ -205,11 +211,11 @@ fun GoalsAndMilestonesScreen(
             onSelectDay = { selectedCalendarDayKey = it }
         )
 
-        // 3. CONSISTENCY GOALS (1 Week / 7 Days, 14 Days, 30 Days, 100 Days)
+        // 3. Milestones Section
         Text(
-            text = "CONSISTENCY MILESTONES (1 WEEK → 100 DAYS)",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
+            text = "Milestones",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold
         )
 
@@ -223,10 +229,16 @@ fun GoalsAndMilestonesScreen(
             val isUnlocked = activeDaysCount >= goal.targetDays
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        width = 1.dp,
+                        color = if (isUnlocked) goal.accent.copy(alpha = 0.55f) else cardBorderColor,
+                        shape = RoundedCornerShape(16.dp)
+                    ),
                 colors = CardDefaults.cardColors(
                     containerColor = if (isUnlocked) {
-                        goal.accent.copy(alpha = 0.15f)
+                        goal.accent.copy(alpha = 0.14f)
                     } else {
                         MaterialTheme.colorScheme.surface
                     }
@@ -246,22 +258,22 @@ fun GoalsAndMilestonesScreen(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(38.dp)
+                                    .size(36.dp)
                                     .clip(CircleShape)
-                                    .background(goal.accent.copy(alpha = 0.2f)),
+                                    .background(goal.accent.copy(alpha = 0.18f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = if (isUnlocked) Icons.Default.EmojiEvents else Icons.Default.LocalFireDepartment,
                                     contentDescription = goal.title,
                                     tint = goal.accent,
-                                    modifier = Modifier.size(20.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
                             Column {
                                 Text(
                                     text = goal.title,
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
@@ -273,7 +285,7 @@ fun GoalsAndMilestonesScreen(
                         }
 
                         Text(
-                            text = if (isUnlocked) "COMPLETED" else "$activeDaysCount/${goal.targetDays}d",
+                            text = if (isUnlocked) "DONE" else "$activeDaysCount/${goal.targetDays}d",
                             style = MaterialTheme.typography.labelMedium.copy(
                                 fontFamily = JetBrainsMonoFamily,
                                 fontWeight = FontWeight.Bold
@@ -288,7 +300,7 @@ fun GoalsAndMilestonesScreen(
                         progress = { animRatio },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(8.dp)
+                            .height(7.dp)
                             .clip(RoundedCornerShape(4.dp)),
                         color = goal.accent,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant
@@ -297,15 +309,15 @@ fun GoalsAndMilestonesScreen(
             }
         }
 
-        // 4. LIFETIME REPS & EXERCISE GOALS
+        // 4. 1,000 Reps Goal
         val repTarget = 1000L
         val repProgress = (totalRepsDone.toFloat() / repTarget.toFloat()).coerceIn(0f, 1f)
         GoalMiniBarCard(
             icon = Icons.Default.FitnessCenter,
-            title = "1,000 Lifetime Reps Club",
-            progressText = "$totalRepsDone / $repTarget reps",
+            title = "1,000 Lifetime Reps",
+            progressText = "$totalRepsDone / $repTarget",
             progress = repProgress,
-            accent = VoltLime
+            accent = primaryColor
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -320,13 +332,22 @@ private fun StatSummaryMiniBox(
     color: Color
 ) {
     Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        modifier = modifier
+            .height(64.dp)
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(12.dp)
+            ),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
         shape = RoundedCornerShape(12.dp)
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 8.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
                 text = value,
@@ -334,13 +355,16 @@ private fun StatSummaryMiniBox(
                     fontFamily = JetBrainsMonoFamily,
                     fontWeight = FontWeight.Bold
                 ),
-                color = color
+                color = color,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -366,12 +390,17 @@ private fun ConsistencyCalendarCard(
             set(Calendar.DAY_OF_MONTH, 1)
         }
     }
-    // Convert Sunday=1..Saturday=7 to Monday=0..Sunday=6 offset
     val leadingEmptyCells = ((firstDayCal.get(Calendar.DAY_OF_WEEK) + 5) % 7)
+    val primaryColor = MaterialTheme.colorScheme.primary
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(18.dp)
+            )
             .testTag("consistency_calendar_card"),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(18.dp)
@@ -392,7 +421,7 @@ private fun ConsistencyCalendarCard(
                     Icon(
                         imageVector = Icons.Default.CalendarMonth,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = primaryColor,
                         modifier = Modifier.size(20.dp)
                     )
                     Text(
@@ -403,7 +432,7 @@ private fun ConsistencyCalendarCard(
                 }
 
                 Text(
-                    text = "Tap day for log",
+                    text = "Tap day",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -445,19 +474,19 @@ private fun ConsistencyCalendarCard(
                             Box(
                                 modifier = Modifier
                                     .weight(1f)
-                                    .height(40.dp)
+                                    .height(38.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(
                                         when {
-                                            hasProgress -> VoltLime.copy(alpha = 0.24f)
-                                            isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                                            hasProgress -> primaryColor.copy(alpha = 0.22f)
+                                            isSelected -> MaterialTheme.colorScheme.primaryContainer
+                                            else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                                         }
                                     )
                                     .border(
                                         width = if (isSelected || isToday) 1.5.dp else 0.dp,
                                         color = when {
-                                            isSelected -> VoltLime
+                                            isSelected -> primaryColor
                                             isToday -> MaterialTheme.colorScheme.secondary
                                             else -> Color.Transparent
                                         },
@@ -473,13 +502,13 @@ private fun ConsistencyCalendarCard(
                                             fontFamily = JetBrainsMonoFamily,
                                             fontWeight = if (hasProgress || isToday) FontWeight.Bold else FontWeight.Normal
                                         ),
-                                        color = if (hasProgress) VoltLime else MaterialTheme.colorScheme.onSurface
+                                        color = if (hasProgress) primaryColor else MaterialTheme.colorScheme.onSurface
                                     )
                                     if (hasProgress) {
                                         Icon(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = "Done",
-                                            tint = VoltLime,
+                                            tint = primaryColor,
                                             modifier = Modifier.size(11.dp)
                                         )
                                     }
@@ -495,7 +524,7 @@ private fun ConsistencyCalendarCard(
             // Selected Day Details Box
             val selectedLogs = logsByDay[selectedDayKey].orEmpty()
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -507,23 +536,26 @@ private fun ConsistencyCalendarCard(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = if (selectedDayKey == todayKey) "Today ($selectedDayKey)" else selectedDayKey,
+                            text = if (selectedDayKey == todayKey) "Today" else selectedDayKey,
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = primaryColor
                         )
                         Text(
-                            text = if (selectedLogs.isEmpty()) "Rest / No logs" else "${selectedLogs.size} ex • $daySets sets • $dayReps reps",
+                            text = if (selectedLogs.isEmpty()) "Rest day" else "${selectedLogs.size} ex • $daySets sets • $dayReps reps",
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                            color = if (selectedLogs.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else VoltLime
+                            color = if (selectedLogs.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else primaryColor,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
-                    selectedLogs.take(4).forEach { log ->
+                    selectedLogs.take(3).forEach { log ->
                         Text(
                             text = "✓ ${log.exerciseName}: ${log.completedSets}× (${log.totalReps} reps)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(top = 2.dp)
+                            modifier = Modifier.padding(top = 2.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -541,7 +573,13 @@ private fun GoalMiniBarCard(
     accent: Color
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                shape = RoundedCornerShape(16.dp)
+            ),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp)
     ) {
@@ -561,6 +599,7 @@ private fun GoalMiniBarCard(
                 Text(
                     text = progressText,
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                    fontWeight = FontWeight.Bold,
                     color = accent
                 )
             }
@@ -569,7 +608,7 @@ private fun GoalMiniBarCard(
                 progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(8.dp)
+                    .height(7.dp)
                     .clip(RoundedCornerShape(4.dp)),
                 color = accent,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant

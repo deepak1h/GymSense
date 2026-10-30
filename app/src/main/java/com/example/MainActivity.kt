@@ -1,11 +1,16 @@
 package com.example
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -25,21 +30,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Face3
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.RemoveCircleOutline
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -49,6 +61,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,6 +76,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -79,13 +93,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.credentials.CredentialManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.data.model.ExerciseCatalog
 import com.example.data.model.ScheduledExercise
 import com.example.data.model.UserProfile
 import com.example.ui.auth.AuthScreen
+import com.example.ui.auth.onGoogleSignInClicked
 import com.example.ui.auth.signOutUser
 import com.example.ui.components.ExerciseSessionSheet
+import com.example.ui.components.StickmanExerciseCanvas
 import com.example.ui.screens.AiCoachAndVisualLabScreen
 import com.example.ui.screens.AnalyticsPortalScreen
 import com.example.ui.screens.GoalsAndMilestonesScreen
@@ -93,10 +112,11 @@ import com.example.ui.screens.SetupAndVitalsScreen
 import com.example.ui.screens.TodayScheduleScreen
 import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.ui.theme.MyApplicationTheme
-import com.example.ui.theme.VoltLime
 import com.example.util.AppVersionInfo
+import com.example.util.GymSenseReminderScheduler
 import com.example.util.configureAppCheck
 import com.example.viewmodel.AiStudioViewModel
+import com.example.viewmodel.AutoScheduleDraft
 import com.example.viewmodel.DataUiState
 import com.example.viewmodel.WorkoutViewModel
 import com.google.firebase.Firebase
@@ -109,6 +129,7 @@ import kotlinx.coroutines.flow.callbackFlow
 
 private const val PREFS_NAME = "gymsense_mode_prefs"
 private const val KEY_LOCAL_ONLY_MODE = "use_local_database_only"
+private const val KEY_DARK_THEME_MODE = "use_dark_theme_mode"
 private const val LOCAL_OFFLINE_USER_ID = "local_offline_athlete"
 
 class MainActivity : ComponentActivity() {
@@ -120,12 +141,25 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            MyApplicationTheme {
+            val context = LocalContext.current
+            val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+            var isDarkTheme by rememberSaveable {
+                mutableStateOf(prefs.getBoolean(KEY_DARK_THEME_MODE, true))
+            }
+
+            MyApplicationTheme(darkTheme = isDarkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AppNavigation()
+                    AppNavigation(
+                        isDarkTheme = isDarkTheme,
+                        onToggleDarkTheme = {
+                            val next = !isDarkTheme
+                            isDarkTheme = next
+                            prefs.edit().putBoolean(KEY_DARK_THEME_MODE, next).apply()
+                        }
+                    )
                 }
             }
         }
@@ -141,7 +175,11 @@ internal fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {
 }
 
 @Composable
-fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
+fun AppNavigation(
+    auth: FirebaseAuth = Firebase.auth,
+    isDarkTheme: Boolean = true,
+    onToggleDarkTheme: () -> Unit = {}
+) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     var useLocalDbWithoutGoogle by rememberSaveable {
@@ -156,6 +194,8 @@ fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
             currentUserId = user.uid,
             defaultDisplayName = user.displayName ?: "Athlete",
             isLocalOnlyMode = false,
+            isDarkTheme = isDarkTheme,
+            onToggleDarkTheme = onToggleDarkTheme,
             onSwitchToSignInOrOut = {
                 prefs.edit().putBoolean(KEY_LOCAL_ONLY_MODE, false).apply()
                 useLocalDbWithoutGoogle = false
@@ -164,8 +204,10 @@ fun AppNavigation(auth: FirebaseAuth = Firebase.auth) {
     } else if (useLocalDbWithoutGoogle) {
         GymSenseHub(
             currentUserId = LOCAL_OFFLINE_USER_ID,
-            defaultDisplayName = "Local Athlete",
+            defaultDisplayName = "Athlete",
             isLocalOnlyMode = true,
+            isDarkTheme = isDarkTheme,
+            onToggleDarkTheme = onToggleDarkTheme,
             onSwitchToSignInOrOut = {
                 prefs.edit().putBoolean(KEY_LOCAL_ONLY_MODE, false).apply()
                 useLocalDbWithoutGoogle = false
@@ -199,10 +241,28 @@ fun GymSenseHub(
     currentUserId: String,
     defaultDisplayName: String,
     isLocalOnlyMode: Boolean,
+    isDarkTheme: Boolean,
+    onToggleDarkTheme: () -> Unit,
     onSwitchToSignInOrOut: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val credentialManager = remember { CredentialManager.create(context) }
+
+    val triggerGoogleLinkSignIn: () -> Unit = {
+        onGoogleSignInClicked(
+            context = context,
+            credentialManager = credentialManager,
+            onAuthSuccess = {
+                onSwitchToSignInOrOut()
+            },
+            onAuthError = {
+                onSwitchToSignInOrOut()
+            },
+            scope = scope,
+            onAuthCancelled = {}
+        )
+    }
 
     val workoutViewModel: WorkoutViewModel = viewModel(
         key = "${currentUserId}_$isLocalOnlyMode",
@@ -226,6 +286,7 @@ fun GymSenseHub(
     val selectedTier by aiViewModel.selectedCoachTier.collectAsStateWithLifecycle()
     val isChatStreaming by aiViewModel.isChatStreaming.collectAsStateWithLifecycle()
     val isGeneratingSchedule by aiViewModel.isGeneratingSchedule.collectAsStateWithLifecycle()
+    val pendingScheduleDraft by aiViewModel.pendingScheduleDraft.collectAsStateWithLifecycle()
     val chatError by aiViewModel.chatError.collectAsStateWithLifecycle()
     val bioscienceState by aiViewModel.bioscienceState.collectAsStateWithLifecycle()
 
@@ -235,21 +296,73 @@ fun GymSenseHub(
     var showThreeFeatureMenu by remember { mutableStateOf(false) }
     var activeBundleFeaturePopup by remember { mutableStateOf<String?>(null) }
 
-    if (activeExerciseSession == null && currentTab != MainNavDestination.TODAY) {
+    val loadedProfile = (profileState as? DataUiState.Success)?.data
+    val needsFirstTimeSetup = profileState is DataUiState.Success && (loadedProfile == null || !loadedProfile.setupCompleted)
+    val profile = loadedProfile ?: UserProfile(
+        userId = currentUserId,
+        displayName = defaultDisplayName,
+        setupCompleted = false
+    )
+    val vitalLogs = (vitalLogsState as? DataUiState.Success)?.data ?: emptyList()
+
+    // Request POST_NOTIFICATIONS on Android 13+ & schedule 3-hour water (6am–12am), workout, and protein shake notifications
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        GymSenseReminderScheduler.scheduleAllDailyReminders(
+            context = context,
+            wantsProteinShake = profile.wantsProteinShake,
+            waterRemindersEnabled = profile.waterAlertsEnabled
+        )
+    }
+
+    LaunchedEffect(profile.wantsProteinShake, profile.waterAlertsEnabled, profile.setupCompleted) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        GymSenseReminderScheduler.scheduleAllDailyReminders(
+            context = context,
+            wantsProteinShake = profile.wantsProteinShake,
+            waterRemindersEnabled = profile.waterAlertsEnabled
+        )
+    }
+
+    if (activeExerciseSession == null && !needsFirstTimeSetup && currentTab != MainNavDestination.TODAY) {
         BackHandler {
             currentTab = MainNavDestination.TODAY
         }
     }
 
-    val loadedProfile = (profileState as? DataUiState.Success)?.data
-    val profile = loadedProfile ?: UserProfile(
-        userId = currentUserId,
-        displayName = defaultDisplayName,
-        setupCompleted = true
-    )
-    val vitalLogs = (vitalLogsState as? DataUiState.Success)?.data ?: emptyList()
+    // Interactive Auto-Schedule Maker Popup (Add / Remove Exercises & Accept to Today Tab)
+    val activeDraft = pendingScheduleDraft
+    if (activeDraft != null) {
+        AutoScheduleReviewPopupDialog(
+            draft = activeDraft,
+            isGirl = profile.isGirl,
+            onToggleExerciseInDraft = { exId ->
+                aiViewModel.toggleExerciseInDraft(exId)
+            },
+            onDismiss = {
+                aiViewModel.dismissScheduleDraft()
+            },
+            onAcceptToToday = {
+                workoutViewModel.applyAiCuratedSchedule(
+                    exerciseIds = activeDraft.selectedExerciseIds,
+                    splitSummary = activeDraft.splitTitle
+                )
+                aiViewModel.dismissScheduleDraft()
+                currentTab = MainNavDestination.TODAY
+            }
+        )
+    }
 
-    // Version Dialog
+    // Version Dialog (Opened from inside the 3-dot menu)
     if (showVersionDialog) {
         AlertDialog(
             onDismissRequest = { showVersionDialog = false },
@@ -296,30 +409,33 @@ fun GymSenseHub(
         )
     }
 
-    // 3-Button Feature Bundle Popup Dialog
+    // 3-Dot Feature Bundle Popup Dialog
     if (activeBundleFeaturePopup != null) {
         val totalReps = workoutLogs.sumOf { it.totalReps }
         val totalSets = workoutLogs.sumOf { it.completedSets }
         val activeDays = workoutLogs.map { it.dayKey }.distinct().size
+        val waterGlasses = (0 until GymSenseReminderScheduler.wakingWaterHours.size).count { idx ->
+            (profile.waterSlotsMask and (1 shl idx)) != 0
+        }
         AlertDialog(
             onDismissRequest = { activeBundleFeaturePopup = null },
             icon = {
                 Icon(
                     imageVector = Icons.Default.Assessment,
                     contentDescription = null,
-                    tint = VoltLime
+                    tint = MaterialTheme.colorScheme.primary
                 )
             },
             title = {
                 Text(
-                    text = activeBundleFeaturePopup ?: "GymSense Feature",
+                    text = activeBundleFeaturePopup ?: "GymSense Summary",
                     fontWeight = FontWeight.Bold
                 )
             },
             text = {
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
                     ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -328,24 +444,28 @@ fun GymSenseHub(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "Storage Mode: ${if (isLocalOnlyMode) "Local Room SQLite DB (No Google)" else "Local DB + Google Cloud Sync"}",
+                            text = "${profile.displayName} • ${if (profile.isGirl) "Girl Sculpt" else "Boy Mode"} (${profile.ageYears} yrs)",
                             style = MaterialTheme.typography.labelMedium,
-                            color = VoltLime
+                            color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "• Completed Exercises: ${workoutLogs.size}",
+                            text = "• Focus: ${profile.primaryFocus} (${profile.fitnessLevel})",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "• Total Lifetime Reps: $totalReps reps ($totalSets sets)",
+                            text = "• Completed Exercises: ${workoutLogs.size} ($totalReps reps, $totalSets sets)",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "• Active Consistency Days: $activeDays / 100 days",
+                            text = "• Active Consistency: $activeDays / 100 days",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Text(
-                            text = "• Custom Routine Saved: ${customRoutineIds.size} exercises",
+                            text = "• Water (6am–12am every 3h): $waterGlasses / 7 glasses (${if (profile.waterAlertsEnabled) "Alerts ON" else "Alerts OFF"})",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "• Daily Protein Shake: ${if (profile.wantsProteinShake) "ON + 7pm Alert" else "OFF"}",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -392,7 +512,7 @@ fun GymSenseHub(
                     title = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.FitnessCenter,
@@ -406,60 +526,47 @@ fun GymSenseHub(
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1
                             )
-                            // Clickable Version Badge (v1.0.2 -> next 1.0.3)
-                            Surface(
-                                color = VoltLime.copy(alpha = 0.16f),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier
-                                    .border(
-                                        width = 1.dp,
-                                        color = VoltLime.copy(alpha = 0.4f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    )
-                                    .clickable { showVersionDialog = true }
-                                    .testTag("version_badge_button")
-                            ) {
-                                Text(
-                                    text = "v${AppVersionInfo.CURRENT_VERSION}",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = JetBrainsMonoFamily,
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = VoltLime,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                            if (isLocalOnlyMode) {
-                                Surface(
-                                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f),
-                                    shape = RoundedCornerShape(6.dp)
-                                ) {
-                                    Text(
-                                        text = "LOCAL DB",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = JetBrainsMonoFamily
-                                        ),
-                                        color = MaterialTheme.colorScheme.secondary,
-                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
                         }
                     },
                     actions = {
-                        // Quick Girl/Boy Switch Icon
-                        IconButton(
-                            onClick = { workoutViewModel.toggleGender(!profile.isGirl) },
-                            modifier = Modifier.testTag("top_bar_gender_button")
+                        // Header Boy / Girl Selector Pill (Single source of truth for Boy/Girl switch)
+                        Surface(
+                            color = if (profile.isGirl) {
+                                MaterialTheme.colorScheme.secondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.primaryContainer
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { workoutViewModel.toggleGender(!profile.isGirl) }
+                                .testTag("top_bar_gender_button")
                         ) {
-                            Icon(
-                                imageVector = if (profile.isGirl) Icons.Default.Face3 else Icons.Default.Face,
-                                contentDescription = if (profile.isGirl) "Girl Mode" else "Boy Mode",
-                                tint = if (profile.isGirl) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (profile.isGirl) Icons.Default.Face3 else Icons.Default.Face,
+                                    contentDescription = if (profile.isGirl) "Girl Mode" else "Boy Mode",
+                                    tint = if (profile.isGirl) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = if (profile.isGirl) "Girl" else "Boy",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (profile.isGirl) {
+                                        MaterialTheme.colorScheme.onSecondaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    }
+                                )
+                            }
                         }
 
-                        // 3-Button Feature Bundle Menu (Top-Right 3-dot Menu)
+                        // 3-Dot Menu (Dark/Light Mode + Progress + Reminders + Version v1.0.4)
                         Box {
                             IconButton(
                                 onClick = { showThreeFeatureMenu = true },
@@ -467,38 +574,68 @@ fun GymSenseHub(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.MoreVert,
-                                    contentDescription = "Feature Bundle Menu"
+                                    contentDescription = "Menu"
                                 )
                             }
                             DropdownMenu(
                                 expanded = showThreeFeatureMenu,
                                 onDismissRequest = { showThreeFeatureMenu = false }
                             ) {
+                                // Dark / Light Mode Toggle in 3-Dot Menu
                                 DropdownMenuItem(
-                                    text = { Text("1. Local DB Progress Report") },
+                                    text = {
+                                        Text(
+                                            text = if (isDarkTheme) "Switch to Light Mode" else "Switch to Dark Mode",
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    },
+                                    onClick = {
+                                        showThreeFeatureMenu = false
+                                        onToggleDarkTheme()
+                                    },
+                                    modifier = Modifier.testTag("menu_toggle_theme_button")
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Progress & Reps") },
                                     leadingIcon = {
                                         Icon(Icons.Default.Assessment, contentDescription = null)
                                     },
                                     onClick = {
                                         showThreeFeatureMenu = false
-                                        activeBundleFeaturePopup = "Local DB Progress & Reps Report"
+                                        activeBundleFeaturePopup = "Progress & Reps Summary"
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("2. Superset & HIIT Timer Bundle") },
+                                    text = { Text("Water (3h) & Shake Alerts") },
                                     leadingIcon = {
-                                        Icon(Icons.Default.Timer, contentDescription = null)
+                                        Icon(Icons.Default.NotificationsActive, contentDescription = null)
                                     },
                                     onClick = {
                                         showThreeFeatureMenu = false
-                                        activeBundleFeaturePopup = "Superset & HIIT Timer Bundle"
+                                        GymSenseReminderScheduler.scheduleAllDailyReminders(
+                                            context = context,
+                                            wantsProteinShake = profile.wantsProteinShake,
+                                            waterRemindersEnabled = profile.waterAlertsEnabled
+                                        )
+                                        GymSenseReminderScheduler.triggerTestNotificationNow(
+                                            context = context,
+                                            wantsProteinShake = profile.wantsProteinShake
+                                        )
+                                        activeBundleFeaturePopup = "3h Water (6am–12am) & Shake Alerts"
                                     }
                                 )
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            if (isLocalOnlyMode) "3. Connect Google Cloud Sync"
-                                            else "3. Backup & Storage Status"
+                                            if (isLocalOnlyMode) "Cloud Sync"
+                                            else "Account Status"
                                         )
                                     },
                                     leadingIcon = {
@@ -512,9 +649,34 @@ fun GymSenseHub(
                                         if (isLocalOnlyMode) {
                                             onSwitchToSignInOrOut()
                                         } else {
-                                            activeBundleFeaturePopup = "Local + Cloud Storage Status"
+                                            activeBundleFeaturePopup = "Profile & Sync Summary"
                                         }
                                     }
+                                )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = "v${AppVersionInfo.CURRENT_VERSION} • Next ${AppVersionInfo.UP_NEXT_VERSION}",
+                                            style = MaterialTheme.typography.labelMedium.copy(
+                                                fontFamily = JetBrainsMonoFamily,
+                                                fontWeight = FontWeight.Bold
+                                            ),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "Version Info",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    },
+                                    onClick = {
+                                        showThreeFeatureMenu = false
+                                        showVersionDialog = true
+                                    },
+                                    modifier = Modifier.testTag("version_badge_button")
                                 )
                             }
                         }
@@ -546,7 +708,7 @@ fun GymSenseHub(
                 )
             },
             bottomBar = {
-                if (!isExpandedScreen) {
+                if (!isExpandedScreen && !needsFirstTimeSetup) {
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface
                     ) {
@@ -583,7 +745,7 @@ fun GymSenseHub(
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                if (isExpandedScreen) {
+                if (isExpandedScreen && !needsFirstTimeSetup) {
                     NavigationRail(
                         containerColor = MaterialTheme.colorScheme.surface,
                         modifier = Modifier.fillMaxHeight()
@@ -641,6 +803,51 @@ fun GymSenseHub(
                         ) {
                             CircularProgressIndicator()
                         }
+                    } else if (needsFirstTimeSetup) {
+                        SetupAndVitalsScreen(
+                            currentProfile = profile,
+                            customRoutineIds = customRoutineIds,
+                            defaultDisplayName = defaultDisplayName,
+                            isSaving = isSaving,
+                            isFirstTimeSetup = true,
+                            isGoogleLinked = !isLocalOnlyMode,
+                            onLinkGoogleAccount = triggerGoogleLinkSignIn,
+                            onSaveCustomRoutine = { ids ->
+                                workoutViewModel.saveCustomUserRoutine(ids)
+                            },
+                            onSkipSetup = {
+                                workoutViewModel.skipSetupToDefault()
+                                currentTab = MainNavDestination.TODAY
+                            },
+                            onSaveSetup = { name, age, h, w, tw, wg, tc, rhr, vo2, level, focus, equip, isGirl, isWk12, wantsShake, rpe ->
+                                workoutViewModel.saveSetupAndVitals(
+                                    displayName = name,
+                                    ageYears = age,
+                                    heightCm = h,
+                                    weightKg = w,
+                                    targetWeightKg = tw,
+                                    weeklyWorkoutGoal = wg,
+                                    targetCaloriesPerWeek = tc,
+                                    restingHeartRateBpm = rhr,
+                                    vo2MaxEstimate = vo2,
+                                    fitnessLevel = level,
+                                    primaryFocus = focus,
+                                    selectedEquipment = equip,
+                                    isGirl = isGirl,
+                                    isWeek1To2Warmup = isWk12,
+                                    wantsProteinShake = wantsShake,
+                                    lastFeedbackRpe = rpe,
+                                    onComplete = {
+                                        GymSenseReminderScheduler.scheduleAllDailyReminders(
+                                            context = context,
+                                            wantsProteinShake = wantsShake,
+                                            waterRemindersEnabled = profile.waterAlertsEnabled
+                                        )
+                                        currentTab = MainNavDestination.TODAY
+                                    }
+                                )
+                            }
+                        )
                     } else {
                         when (currentTab) {
                             MainNavDestination.TODAY -> {
@@ -651,20 +858,43 @@ fun GymSenseHub(
                                     todayExtraIds = todayExtraIds,
                                     isGeneratingAiSchedule = isGeneratingSchedule,
                                     onSelectExercise = { activeExerciseSession = it },
-                                    onToggleGender = { isGirl -> workoutViewModel.toggleGender(isGirl) },
                                     onToggleWeek1To2 = { enabled -> workoutViewModel.toggleWeek1To2Warmup(enabled) },
+                                    onToggleWaterAlerts = { enabled ->
+                                        workoutViewModel.toggleWaterAlertsPreference(enabled)
+                                        GymSenseReminderScheduler.scheduleAllDailyReminders(
+                                            context = context,
+                                            wantsProteinShake = profile.wantsProteinShake,
+                                            waterRemindersEnabled = enabled
+                                        )
+                                    },
+                                    onToggleProteinShake = { enabled ->
+                                        workoutViewModel.toggleProteinShakePreference(enabled)
+                                        GymSenseReminderScheduler.scheduleAllDailyReminders(
+                                            context = context,
+                                            wantsProteinShake = enabled,
+                                            waterRemindersEnabled = profile.waterAlertsEnabled
+                                        )
+                                    },
+                                    onToggleWaterSlot = { slotIdx ->
+                                        workoutViewModel.toggleWaterSlot(slotIdx)
+                                    },
+                                    onTestReminderNotification = {
+                                        GymSenseReminderScheduler.scheduleAllDailyReminders(
+                                            context = context,
+                                            wantsProteinShake = profile.wantsProteinShake,
+                                            waterRemindersEnabled = profile.waterAlertsEnabled
+                                        )
+                                        GymSenseReminderScheduler.triggerTestNotificationNow(
+                                            context = context,
+                                            wantsProteinShake = profile.wantsProteinShake
+                                        )
+                                    },
                                     onSelectSplit = { split -> workoutViewModel.selectSplitOverride(split) },
                                     onShiftMissedDay = { onPopup ->
                                         workoutViewModel.shiftScheduleForMissedDay(1, onPopup)
                                     },
                                     onRequestAiSchedule = {
-                                        aiViewModel.generateAiEquipmentSchedule(
-                                            profile = profile,
-                                            onSuccess = { ids, title ->
-                                                workoutViewModel.applyAiCuratedSchedule(ids, title)
-                                            },
-                                            onError = {}
-                                        )
+                                        aiViewModel.generateAiEquipmentSchedule(profile = profile)
                                     },
                                     onToggleExtraExercise = { exId ->
                                         workoutViewModel.toggleExtraExerciseToday(exId)
@@ -681,6 +911,9 @@ fun GymSenseHub(
                                     customRoutineIds = customRoutineIds,
                                     defaultDisplayName = defaultDisplayName,
                                     isSaving = isSaving,
+                                    isFirstTimeSetup = false,
+                                    isGoogleLinked = !isLocalOnlyMode,
+                                    onLinkGoogleAccount = triggerGoogleLinkSignIn,
                                     onSaveCustomRoutine = { ids ->
                                         workoutViewModel.saveCustomUserRoutine(ids)
                                         currentTab = MainNavDestination.TODAY
@@ -689,9 +922,10 @@ fun GymSenseHub(
                                         workoutViewModel.skipSetupToDefault()
                                         currentTab = MainNavDestination.TODAY
                                     },
-                                    onSaveSetup = { name, h, w, tw, wg, tc, rhr, vo2, level, focus, equip, isGirl, isWk12, rpe ->
+                                    onSaveSetup = { name, age, h, w, tw, wg, tc, rhr, vo2, level, focus, equip, isGirl, isWk12, wantsShake, rpe ->
                                         workoutViewModel.saveSetupAndVitals(
                                             displayName = name,
+                                            ageYears = age,
                                             heightCm = h,
                                             weightKg = w,
                                             targetWeightKg = tw,
@@ -704,8 +938,16 @@ fun GymSenseHub(
                                             selectedEquipment = equip,
                                             isGirl = isGirl,
                                             isWeek1To2Warmup = isWk12,
+                                            wantsProteinShake = wantsShake,
                                             lastFeedbackRpe = rpe,
-                                            onComplete = { currentTab = MainNavDestination.TODAY }
+                                            onComplete = {
+                                                GymSenseReminderScheduler.scheduleAllDailyReminders(
+                                                    context = context,
+                                                    wantsProteinShake = wantsShake,
+                                                    waterRemindersEnabled = profile.waterAlertsEnabled
+                                                )
+                                                currentTab = MainNavDestination.TODAY
+                                            }
                                         )
                                     }
                                 )
@@ -721,9 +963,17 @@ fun GymSenseHub(
                             MainNavDestination.ANALYTICS -> {
                                 AnalyticsPortalScreen(
                                     profile = profile,
+                                    schedule = todaySchedule,
                                     workoutLogs = workoutLogs,
                                     vitalLogs = vitalLogs,
                                     bioscienceState = bioscienceState,
+                                    onQuickAddWaterToday = {
+                                        val nextUnfilledSlot = (0 until GymSenseReminderScheduler.wakingWaterHours.size)
+                                            .firstOrNull { idx -> (profile.waterSlotsMask and (1 shl idx)) == 0 }
+                                        if (nextUnfilledSlot != null) {
+                                            workoutViewModel.toggleWaterSlot(nextUnfilledSlot)
+                                        }
+                                    },
                                     onGenerateBioscienceReport = {
                                         aiViewModel.generateBioscienceIntelligenceReport(
                                             profile = profile,
@@ -745,17 +995,12 @@ fun GymSenseHub(
                                     isChatStreaming = isChatStreaming,
                                     isGeneratingSchedule = isGeneratingSchedule,
                                     chatError = chatError,
-                                    onSelectTier = { aiViewModel.selectCoachTier(it) },
+                                    isGoogleLinked = !isLocalOnlyMode,
+                                    onLinkGoogleAccount = triggerGoogleLinkSignIn,
+                                    onCycleTier = { aiViewModel.cycleCoachTier() },
                                     onSendChat = { msg -> aiViewModel.sendChatMessage(msg, profile) },
                                     onAutoBuildSchedule = {
-                                        aiViewModel.generateAiEquipmentSchedule(
-                                            profile = profile,
-                                            onSuccess = { ids, title ->
-                                                workoutViewModel.applyAiCuratedSchedule(ids, title)
-                                                currentTab = MainNavDestination.TODAY
-                                            },
-                                            onError = {}
-                                        )
+                                        aiViewModel.generateAiEquipmentSchedule(profile = profile)
                                     }
                                 )
                             }
@@ -765,4 +1010,229 @@ fun GymSenseHub(
             }
         }
     }
+}
+
+/**
+ * Interactive Popup shown when Auto-Schedule Maker creates a workout plan from the user's
+ * available machines and fitness level. Allows adding or removing any exercise before accepting to Today.
+ */
+@Composable
+private fun AutoScheduleReviewPopupDialog(
+    draft: AutoScheduleDraft,
+    isGirl: Boolean,
+    onToggleExerciseInDraft: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onAcceptToToday: () -> Unit
+) {
+    var showAddMoreCatalog by remember { mutableStateOf(false) }
+    val allCatalog = remember {
+        ExerciseCatalog.allExercises.filter { it.id != "ex_protein_shake_recovery" }
+    }
+    val selectedTemplates = remember(draft.selectedExerciseIds, allCatalog) {
+        draft.selectedExerciseIds.mapNotNull { id -> allCatalog.firstOrNull { it.id == id } }
+    }
+    val unselectedTemplates = remember(draft.selectedExerciseIds, allCatalog) {
+        allCatalog.filter { it.id !in draft.selectedExerciseIds }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = draft.splitTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Text(
+                    text = "Level: ${draft.fitnessLevel} • Gear: ${draft.equipmentSummary}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Selected (${selectedTemplates.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    TextButton(
+                        onClick = { showAddMoreCatalog = !showAddMoreCatalog },
+                        modifier = Modifier.testTag("toggle_add_more_in_popup_button")
+                    ) {
+                        Text(if (showAddMoreCatalog) "Hide Catalog" else "+ Add Exercise")
+                    }
+                }
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(320.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Selected exercises first (tap to remove)
+                    items(selectedTemplates, key = { "sel_${it.id}" }) { ex ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onToggleExerciseInDraft(ex.id) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    StickmanExerciseCanvas(
+                                        motionType = ex.motionType,
+                                        isGirl = isGirl,
+                                        modifier = Modifier.size(40.dp),
+                                        showGrid = false
+                                    )
+                                    Column {
+                                        Text(
+                                            text = ex.name,
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${ex.muscleGroup} • ${ex.requiredEquipment}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.RemoveCircleOutline,
+                                    contentDescription = "Remove",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Optional Add More section inside the same popup
+                    if (showAddMoreCatalog) {
+                        item {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Tap to Add to Plan:",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        items(unselectedTemplates, key = { "unsel_${it.id}" }) { ex ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onToggleExerciseInDraft(ex.id) },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        StickmanExerciseCanvas(
+                                            motionType = ex.motionType,
+                                            isGirl = isGirl,
+                                            modifier = Modifier.size(38.dp),
+                                            showGrid = false
+                                        )
+                                        Column {
+                                            Text(
+                                                text = ex.name,
+                                                style = MaterialTheme.typography.labelLarge,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${ex.muscleGroup} • ${ex.requiredEquipment}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1
+                                            )
+                                        }
+                                    }
+                                    Icon(
+                                        imageVector = Icons.Default.AddCircle,
+                                        contentDescription = "Add",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onAcceptToToday,
+                modifier = Modifier.testTag("accept_auto_schedule_popup_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Accept to Today")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

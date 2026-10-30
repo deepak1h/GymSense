@@ -1,10 +1,10 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,25 +15,29 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,12 +47,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.model.UserProfile
+import com.example.ui.theme.JetBrainsMonoFamily
 import com.example.viewmodel.ChatTurn
 import com.example.viewmodel.CoachModelTier
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AiCoachAndVisualLabScreen(
     profile: UserProfile,
@@ -57,145 +62,236 @@ fun AiCoachAndVisualLabScreen(
     isChatStreaming: Boolean,
     isGeneratingSchedule: Boolean,
     chatError: String?,
-    onSelectTier: (CoachModelTier) -> Unit,
+    isGoogleLinked: Boolean = false,
+    onLinkGoogleAccount: () -> Unit = {},
+    onCycleTier: () -> Unit,
     onSendChat: (String) -> Unit,
     onAutoBuildSchedule: () -> Unit
 ) {
     var messageInput by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    val cardBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+
+    LaunchedEffect(chatHistory.size) {
+        if (chatHistory.isNotEmpty()) {
+            listState.animateScrollToItem(chatHistory.lastIndex)
+        }
+    }
+
+    val quickPrompts = remember(profile.bmiValue, profile.isGirl) {
+        listOf(
+            if (profile.isGirl) "Glute & tone tips" else "Chest & back tips",
+            "No-Equip workout",
+            "Wk 1-2 warmup",
+            "Squat form cues",
+            "BMI ${profile.bmiValue} diet",
+            "Protein timing"
+        )
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
             .testTag("ai_biolab_screen")
     ) {
-        // Top GymBae Header & 1-Tap AI Schedule Builder Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp)
+        // Ultra-Compact Single-Line Toolbar
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, cardBorderColor, RoundedCornerShape(14.dp)),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(14.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Column {
-                            Text(
-                                text = "GymBae Coach",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "${profile.genderLabel} • ${profile.equipmentList.size} Gear",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        CoachModelTier.entries.forEach { tier ->
-                            FilterChip(
-                                selected = selectedTier == tier,
-                                onClick = { onSelectTier(tier) },
-                                label = { Text(tier.label) },
-                                modifier = Modifier.testTag("model_chip_${tier.name}")
-                            )
-                        }
-                    }
-                }
-
-                Button(
-                    onClick = onAutoBuildSchedule,
-                    enabled = !isGeneratingSchedule,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(42.dp)
-                        .testTag("gymbae_build_schedule_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
                     )
+                    Text(
+                        text = "GymBae",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+
+                    Surface(
+                        color = if (isGoogleLinked) {
+                            MaterialTheme.colorScheme.primaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .let { mod ->
+                                if (!isGoogleLinked) {
+                                    mod
+                                        .clickable(onClick = onLinkGoogleAccount)
+                                        .testTag("gymbae_link_google_button")
+                                } else {
+                                    mod
+                                }
+                            }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isGoogleLinked) Icons.Default.VerifiedUser else Icons.Default.Security,
+                                contentDescription = null,
+                                tint = if (isGoogleLinked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = if (isGoogleLinked) "Private" else "Link Google",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (isGoogleLinked) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSecondaryContainer
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    if (isGeneratingSchedule) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Building Schedule...")
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.FitnessCenter,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Auto-Build My Schedule from Gear",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                    val tierIcon = when (selectedTier) {
+                        CoachModelTier.FAST -> Icons.Default.Bolt
+                        CoachModelTier.GENERAL -> Icons.Default.AutoAwesome
+                        CoachModelTier.DEEP_BIOSCIENCE -> Icons.Default.Psychology
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .clickable(onClick = onCycleTier)
+                            .testTag("cycle_coach_mode_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = tierIcon,
+                                contentDescription = selectedTier.label,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = selectedTier.label,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = !isGeneratingSchedule, onClick = onAutoBuildSchedule)
+                            .testTag("gymbae_build_schedule_button")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (isGeneratingSchedule) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(13.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.FitnessCenter,
+                                    contentDescription = "Auto-Plan",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                            Text(
+                                text = "Auto-Plan",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Quick Short Prompts
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            listOf(
-                "No-Equip workout",
-                "Week 1-2 warmup tips",
-                "Squat form cues",
-                "BMI ${profile.bmiValue} diet tip"
-            ).forEach { quickPrompt ->
-                AssistChip(
-                    onClick = { onSendChat(quickPrompt) },
-                    label = { Text(quickPrompt, style = MaterialTheme.typography.labelSmall) }
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Scrollable Chat Thread
+        // Expansive Chat Thread
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .padding(vertical = 4.dp)
                 .testTag("chat_messages_list"),
             contentPadding = PaddingValues(vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(chatHistory, key = { it.id }) { turn ->
                 val isUser = turn.role == "user"
+                val bubbleShape = RoundedCornerShape(
+                    topStart = 16.dp,
+                    topEnd = 16.dp,
+                    bottomStart = if (isUser) 16.dp else 4.dp,
+                    bottomEnd = if (isUser) 4.dp else 16.dp
+                )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
                 ) {
                     Card(
-                        modifier = Modifier.fillMaxWidth(0.86f),
+                        modifier = Modifier
+                            .fillMaxWidth(if (isUser) 0.82f else 0.92f)
+                            .border(
+                                width = 1.dp,
+                                color = if (isUser) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                } else {
+                                    cardBorderColor
+                                },
+                                shape = bubbleShape
+                            ),
                         colors = CardDefaults.cardColors(
                             containerColor = if (isUser) {
                                 MaterialTheme.colorScheme.primaryContainer
@@ -203,14 +299,9 @@ fun AiCoachAndVisualLabScreen(
                                 MaterialTheme.colorScheme.surface
                             }
                         ),
-                        shape = RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomStart = if (isUser) 16.dp else 4.dp,
-                            bottomEnd = if (isUser) 4.dp else 16.dp
-                        )
+                        shape = bubbleShape
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
                             if (!isUser) {
                                 Text(
                                     text = "GYMBAE • ${turn.modelTag.uppercase()}",
@@ -218,12 +309,16 @@ fun AiCoachAndVisualLabScreen(
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Spacer(modifier = Modifier.height(3.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
                             }
                             Text(
                                 text = turn.text,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = if (isUser) {
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
                             )
                         }
                     }
@@ -249,11 +344,37 @@ fun AiCoachAndVisualLabScreen(
             }
         }
 
-        // Message Input Bar
-        Row(
+        // Single-Line Quick Prompts
+        LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 6.dp),
+                .padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(quickPrompts) { quickPrompt ->
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, cardBorderColor, RoundedCornerShape(10.dp))
+                        .clickable { onSendChat(quickPrompt) }
+                ) {
+                    Text(
+                        text = quickPrompt,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        // Message Input Bar
+        Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             OutlinedTextField(
@@ -263,7 +384,8 @@ fun AiCoachAndVisualLabScreen(
                 modifier = Modifier
                     .weight(1f)
                     .testTag("chat_input_field"),
-                singleLine = true
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
             IconButton(
